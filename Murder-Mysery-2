@@ -1,5 +1,6 @@
 --[[
-    MM2 Summer Autofarm GUI (Full Original Port + Fixed Respawn & Fixed Slider)
+    MM2 Summer Autofarm - Full Original GUI + Upgraded Engine
+    (Fixed Spawn-Kill & Fixed Slider Scale)
 ]]
 
 local Players = game:GetService("Players")
@@ -205,7 +206,9 @@ connect(screenGui.AncestryChanged, function(_, parent)
     end
 end)
 
--- Coin Detection Logic
+----------------------------------------------------
+-- МОЩНЫЙ ДВИЖОК ПОИСКА И СБОРА МОНЕТ (ИЗ 2-ГО СКРИПТА)
+----------------------------------------------------
 local coinBlacklist = {}
 local coinTouchFails = setmetatable({}, { __mode = "k" })
 local deadCoins = setmetatable({}, { __mode = "k" })
@@ -602,7 +605,9 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
     end
 end)
 
--- Anti-Fling & Protection Bypasses
+----------------------------------------------------
+-- ОБХОДЫ ANTI-FLING И ANTI-VOID (ИЗ 2-ГО СКРИПТА)
+----------------------------------------------------
 local lastSafePosition = nil
 local lastFramePosition = nil
 local safePosAccumulator = 0
@@ -661,7 +666,9 @@ connect(player.Idled, function()
     end)
 end)
 
--- Layout Builder
+----------------------------------------------------
+-- ВЕРСТКА ТВОЕГО КРАСИВОГО СМАРТ-ИНТЕРФЕЙСА
+----------------------------------------------------
 local holder = create("Frame", {
     Name = "Holder",
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -984,9 +991,12 @@ local setDieOnFullBagEnabled = makeToggleCard(
     end
 )
 
--- FIXED RESPAWN SAFETY CHECK (Will NEVER kill you on spawn or lobby)
+----------------------------------------------------
+-- ИСПРАВЛЕННЫЙ RESPAWN (НЕ УБИВАЕТ НА СПАВНЕ И В ЛОББИ)
+----------------------------------------------------
 local function killCharacterWhenBagIsFull()
     if bagKillTriggered or not state.dieOnFullBag then return end
+    -- ИСКЛЮЧЕНИЕ: Убивать строго в игре, только когда сумка найдена и действительно полна
     if not state.bagFound or state.bagCount < state.bagLimit or isRoundOver() then return end
 
     bagKillTriggered = true
@@ -1008,7 +1018,9 @@ local function killCharacterWhenBagIsFull()
     end
 end
 
--- FIXED SLIDER WITH FULL ACCURACY ON PC AND MOBILE
+----------------------------------------------------
+-- ИСПРАВЛЕННЫЙ ПОЛЗУНОК СКОРОСТИ (ПОД UISCALE)
+----------------------------------------------------
 local speedCard = makeCard("FarmSpeed", 116, 76)
 create("TextLabel", {
     BackgroundTransparency = 1,
@@ -1119,7 +1131,9 @@ local setProtectionEnabled = makeToggleCard(
     end
 )
 
--- Statistics Panel
+----------------------------------------------------
+-- ОКОШКО СТАТИСТИКИ С ФАРМОМ И ТАЙМЕРОМ
+----------------------------------------------------
 local statsPanel = create("Frame", {
     Name = "FarmSummary",
     AnchorPoint = Vector2.new(1, 0.5),
@@ -1181,7 +1195,9 @@ connect(minimizeButton.Activated, function()
     window.Size = UDim2.fromOffset(WINDOW_WIDTH, state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT)
 end)
 
--- Render Stepped Loop
+----------------------------------------------------
+-- ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ
+----------------------------------------------------
 local statsAccumulator = 0
 connect(RunService.RenderStepped, function(deltaTime)
     if not state.alive then return end
