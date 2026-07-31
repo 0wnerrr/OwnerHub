@@ -1,7 +1,3 @@
--- OwnerHub/main.lua
--- sexy script by github.com/owner
--- please give credit if you use anything from my code
-
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -12,18 +8,18 @@ local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/KevinS
 
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or function(...) end
 
-if getgenv().OwnerHub_Connections then
-    for i, conn in pairs(getgenv().OwnerHub_Connections) do
+if getgenv().VisionHub_Connections then
+    for i, conn in pairs(getgenv().VisionHub_Connections) do
         if conn then
             pcall(function() conn:Disconnect() end)
         end
-        getgenv().OwnerHub_Connections[i] = nil
+        getgenv().VisionHub_Connections[i] = nil
     end
 end
-getgenv().OwnerHub_Connections = {}
+getgenv().VisionHub_Connections = {}
 
 for _, gui in ipairs(CoreGui:GetChildren()) do
-    if gui.Name == "OwnerHub" or gui.Name == "VisionESP" or string.match(gui.Name, "^OwnerBtn_") or gui.Name == "OwnerTimerGUI" or gui.Name == "OwnerStarsBG" then
+    if gui.Name == "Vision Hub" or gui.Name == "VisionESP" or string.match(gui.Name, "^VisionBtn_") or gui.Name == "VisionTimerGUI" then
         gui:Destroy()
     end
 end
@@ -31,7 +27,7 @@ end
 for _, player in ipairs(Players:GetPlayers()) do
     if player.Character then
         local artifacts = {
-            player.Character:FindFirstChild("OwnerHighlight"),
+            player.Character:FindFirstChild("VisionHighlight"),
             player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("NameESP")
         }
         for _, artifact in ipairs(artifacts) do
@@ -41,7 +37,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 for _, obj in ipairs(Workspace:GetDescendants()) do
-    if obj.Name == "OwnerGunHighlight" or obj.Name == "OwnerGunLabel" then
+    if obj.Name == "VisionGunHighlight" or obj.Name == "VisionGunLabel" then
         obj:Destroy()
     end
 end
@@ -56,7 +52,7 @@ if getgenv().FPDH then
 end
 
 local function AddConnection(conn)
-    local connections = getgenv().OwnerHub_Connections
+    local connections = getgenv().VisionHub_Connections
     for i = #connections, 1, -1 do
         local c = connections[i]
         if not c or not c.Connected then
@@ -123,11 +119,10 @@ Modules.Config = {
     SilentThrow = false,
     AutoShootMurderer = false,
     AutoQueue = true,
-    QueueUrl = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/owner/Owner-Hub/refs/heads/main/main.lua"))()',
+    QueueUrl = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/orialdev/Vision-Hub/refs/heads/main/main.lua"))()',
     NotifyMurderer = false,
     NotifySheriff = false,
     NotifyGunDropped = false,
-    AutoFarmCoins = false,
 
     ButtonsLocked = false
 }
@@ -301,6 +296,8 @@ function Modules.TeleportToMap()
 
     if spawn and spawn:IsA("BasePart") then
         character:PivotTo(spawn.CFrame * CFrame.new(0, 5, 0))
+    else
+        
     end
 end
 
@@ -351,47 +348,6 @@ function getCoinContainer()
     local map = getMap()
     if map then return map:FindFirstChild("CoinContainer") end
     return nil
-end
-
--- ИСПРАВЛЕННЫЙ БЕЗОПАСНЫЙ АВТОФАРМ (как в Vision)
-do
-    local autofarmTask = nil
-
-    function Modules.ToggleAutoFarmCoins(enable)
-        Modules.Config.AutoFarmCoins = enable
-
-        if autofarmTask then
-            task.cancel(autofarmTask)
-            autofarmTask = nil
-        end
-
-        if not enable then return end
-
-        autofarmTask = task.spawn(function()
-            while Modules.Config.AutoFarmCoins do
-                pcall(function()
-                    local container = getCoinContainer()
-                    local root = Modules.RootPart
-                    if container and root and root.Parent then
-                        for _, coin in ipairs(container:GetChildren()) do
-                            if not Modules.Config.AutoFarmCoins then break end
-                            local cPart = coin:FindFirstChild("CoinVisual") or coin:FindFirstChild("BasePart") or coin:FindFirstChildWhichIsA("BasePart")
-                            if cPart and cPart:IsA("BasePart") then
-                                -- Безопасное перемещение через CFrame без жесткого телепорта с мгновенным киком
-                                root.CFrame = cPart.CFrame
-                                if firetouchinterest then
-                                    firetouchinterest(cPart, root, 0)
-                                    firetouchinterest(cPart, root, 1)
-                                end
-                                task.wait(0.1)
-                            end
-                        end
-                    end
-                end)
-                task.wait(0.3)
-            end
-        end)
-    end
 end
 
 function Modules.GetPlayerByName(name)
@@ -1140,12 +1096,12 @@ do
                     Content = "A gun has been dropped in the map.",
                     Icon = "crosshair",
                     Duration = 5,
-                    TitleColor = Color3.fromHex("#808080"),
-                    ContentColor = Color3.fromHex("#E0E0E0"),
-                    IconColor = Color3.fromHex("#A0A0A0"),
-                    BackgroundColor = Color3.fromHex("#121212"),
-                    ProgressBarColor = Color3.fromHex("#808080"),
-                    CloseButtonColor = Color3.fromHex("#808080"),
+                    TitleColor = Color3.fromHex("#00BFFF"),
+                    ContentColor = Color3.fromHex("#E6F7FF"),
+                    IconColor = Color3.fromHex("#89F7FF"),
+                    BackgroundColor = Color3.fromHex("#030407"),
+                    ProgressBarColor = Color3.fromHex("#00BFFF"),
+                    CloseButtonColor = Color3.fromHex("#00BFFF"),
                 })
             end
         end)
@@ -1280,7 +1236,7 @@ function Modules.ChatRoles()
     local mName = murderer and murderer.Name or "Unknown"
     local sName = sheriff and sheriff.Name or "Unknown"
     
-    local msg = "OwnerHub >> Murderer: " .. mName .. " | Sheriff: " .. sName
+    local msg = "Vision Hub >> Murderer: " .. mName .. " | Sheriff: " .. sName
     
     if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
         local chan = TextChatService:FindFirstChild("TextChannels")
@@ -1326,7 +1282,7 @@ do
         end
 
         timerGui = Instance.new("ScreenGui")
-        timerGui.Name = "OwnerTimerGUI"
+        timerGui.Name = "VisionTimerGUI"
         timerGui.ResetOnSpawn = false
         timerGui.IgnoreGuiInset = true
         timerGui.Parent = CoreGui
@@ -1338,7 +1294,7 @@ do
         label.BackgroundTransparency = 1
         label.Font = Enum.Font.GothamBold
         label.TextScaled = true
-        label.TextColor3 = Color3.fromHex("#E0E0E0")
+        label.TextColor3 = Color3.fromHex("#E6F7FF")
         label.TextStrokeColor3 = Color3.fromHex("#000000")
         label.TextStrokeTransparency = 0
         label.Text = "Loading..."
@@ -1389,8 +1345,8 @@ do
                                 Duration = 8,
                                 TitleColor = Color3.fromRGB(255, 0, 0),
                                 IconColor = Color3.fromRGB(255, 255, 255),
-                                BackgroundColor = Color3.fromHex("#121212"),
-                                CloseButtonColor = Color3.fromHex("#808080"),
+                                BackgroundColor = Color3.fromHex("#030407"),
+                                CloseButtonColor = Color3.fromHex("#00BFFF"),
                              })
                          end)
                     end
@@ -1408,8 +1364,8 @@ do
                                 Duration = 8,
                                 TitleColor = Color3.fromRGB(0, 0, 255),
                                 IconColor = Color3.fromRGB(255, 255, 255),
-                                BackgroundColor = Color3.fromHex("#121212"),
-                                CloseButtonColor = Color3.fromHex("#808080"),
+                                BackgroundColor = Color3.fromHex("#030407"),
+                                CloseButtonColor = Color3.fromHex("#00BFFF"),
                              })
                          end)
                     end
@@ -1437,7 +1393,7 @@ do
         if not settings.Enabled then return end
 
         local screenGui = Instance.new("ScreenGui")
-        screenGui.Name = "OwnerBtn_" .. id
+        screenGui.Name = "VisionBtn_" .. id
         screenGui.Parent = CoreGui
         screenGui.ResetOnSpawn = false
         screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -1459,7 +1415,7 @@ do
         else
             btn = Instance.new("ImageButton")
             btn.Image = settings.Icon or ""
-            btn.ImageColor3 = settings.ImageColor or Color3.fromHex("#E0E0E0")
+            btn.ImageColor3 = settings.ImageColor or Color3.fromHex("#E6F7FF")
         end
 
         btn.Name = "ActionBtn"
@@ -1468,7 +1424,7 @@ do
         if initialY > 0.8 then initialY = 0.45 end
         btn.Position = UDim2.new(0.9, -20, initialY, 0)
         
-        btn.BackgroundColor3 = Color3.fromHex("#222222")
+        btn.BackgroundColor3 = Color3.fromHex("#09202B")
         btn.BackgroundTransparency = 0.3
         btn.AutoButtonColor = true
         btn.Parent = screenGui
@@ -1478,7 +1434,7 @@ do
         uiCorner.Parent = btn
 
         local stroke = Instance.new("UIStroke")
-        stroke.Color = Color3.fromHex("#555555")
+        stroke.Color = Color3.fromHex("#00BFFF")
         stroke.Thickness = 2.5
         stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         stroke.Parent = btn
@@ -1539,35 +1495,34 @@ end
 WindUI:AddTheme({
     Name = "Default",
     
-    Accent = Color3.fromHex("#7F7F7F"),
-    Dialog = Color3.fromHex("#121212"),
-    Outline = Color3.fromHex("#333333"),
-    Text = Color3.fromHex("#E0E0E0"),
-    Placeholder = Color3.fromHex("#777777"),
-    Background = Color3.fromHex("#1A1A1A"),
-    Button = Color3.fromHex("#262626"),
-    Icon = Color3.fromHex("#CCCCCC")
+    Accent = Color3.fromHex("#00BFFF"),
+    Dialog = Color3.fromHex("#071021"),
+    Outline = Color3.fromHex("#BFEFFF"),
+    Text = Color3.fromHex("#E6F7FF"),
+    Placeholder = Color3.fromHex("#6F8892"),
+    Background = Color3.fromHex("#030407"),
+    Button = Color3.fromHex("#09202B"),
+    Icon = Color3.fromHex("#89F7FF")
 })
 
 local Window = WindUI:CreateWindow({
-    Title = "OwnerHub",
-    Author = "by owner?",
-    Folder = "OwnerHub",
+    Title = "Vision Hub",
+    Author = "by orialdev",
+    Folder = "VisionHub",
     Theme = "Default",
     Icon = "https://raw.githubusercontent.com/orialdev2/Vision-Hub/refs/heads/main/Vision_Logo1.png",
     IconSize = 50,
     NewElements = true,
-    BackgroundImage = "rbxassetid://0",
     OpenButton = {
-        Title = "OwnerHub",
+        Title = "Vision Hub",
         CornerRadius = UDim.new(1, 0),
         StrokeThickness = 3,
         Enabled = true,
         Draggable = true,
         OnlyMobile = true,
         Color = ColorSequence.new(
-            Color3.fromHex("#444444"),
-            Color3.fromHex("#888888")
+            Color3.fromHex("#00BFFF"),
+            Color3.fromHex("#89F7FF")
         )
     }
 })
@@ -1621,20 +1576,65 @@ local Settings = Window:Tab({
 
 
 Main:Paragraph({
-    Title = "Welcome to OwnerHub!",
-    Desc = "Thanks for using OwnerHub.",
+    Title = "Welcome to Vision Hub!",
+    Desc = "Thanks for using Vision Hub, Join our Discord for support and updates.",
+    Thumbnail = "https://raw.githubusercontent.com/orialdev2/Vision-Hub/refs/heads/main/Vision.png",
     ThumbnailSize = 160,
-})
+            Buttons = {
+            {
+                Title = "Join Discord",
+                Icon = "geist:logo-discord",
+                Callback = function()
+                    if setclipboard then
+                        setclipboard("https://discord.gg/TZHgrMUKGJ")
+                        Window:Dialog({
+                            Title = "Discord Link Copied",
+                            Icon = "geist:logo-discord",
+                            Content = "The Discord invite link has been copied to your clipboard.",
+                            Buttons = {
+                                { Title = "OK", Icon="check" }
+                            }
+                        })
+                    end
+                end
+            }
+        }
+    }
+)
 
 Main:Space()
 
 Main:Code({
-    Title = "Changelog 1.8.2",
+    Title = "Changelog 1.8.0",
     Code = [[
-[OwnerHub]
-+ Removed background stars and ambient glows completely
-+ Reconfigured Auto Farm Coins to prevent anti-cheat kicks
-+ Fully optimized and stabilized performance
+[VisionHub]
++ 1.8.0 released!
+
++ Fully rewritten codebase
++ Fixed several bugs and stability issues
++ UI reorganized with buttons for all features
+
++ Added Save/Load Config
++ Added Auto Knife Throw
++ Added Throw Knife
+
+- Removed Fly
+
++ Reworked and optimized ESP Players (lag and instability fixed)
++ Reworked Grab Gun and Auto Grab Gun
++ Reworked and optimized God Mode
++ Reworked and optimized Anti-Fling (lag and instability fixed)
++ Reworked and optimized Noclip (lag and instability fixed)
++ Reworked Knife Aura
++ Reworked and optimized Kill All and Auto Kill All (lag and instability fixed)
++ Optimized Auto Shoot Murderer
++ Optimized Fling
+
++ Complete ESP redesign
+
++ Fully rewritten code
++ Fixed bugs, crashes, and instability
++ More features coming soon
     ]]
 })
 
@@ -1642,7 +1642,7 @@ Main:Space()
 
 Main:Label({
     Title = "Did you find any error?",
-    Desc = "-- For any bugs or errors, check your script configuration. --",
+    Desc = "-- For any bugs or errors, contact us on Discord. --",
 })
 
 do
@@ -1854,10 +1854,10 @@ do
 end
 
 do
-    local ESP_Folder = CoreGui:FindFirstChild("OwnerESP")
+    local ESP_Folder = CoreGui:FindFirstChild("VisionESP")
     if not ESP_Folder then
         ESP_Folder = Instance.new("Folder")
-        ESP_Folder.Name = "OwnerESP"
+        ESP_Folder.Name = "VisionESP"
         ESP_Folder.Parent = CoreGui
     end
 
@@ -1885,7 +1885,7 @@ do
     local function UpdateESPState()
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= Modules.Player and plr.Character then
-                local espColor = Color3.fromRGB(200, 200, 200)
+                local espColor = Color3.fromRGB(0, 255, 0)
                 local espRole = "Innocent"
 
                 local isMurderer = (Modules.FindMurderer() == plr)
@@ -1909,22 +1909,22 @@ do
 
                 local char = plr.Character
                 if Modules.Config.EspPlayers then
-                    if not char:FindFirstChild("OwnerHighlight") then
+                    if not char:FindFirstChild("VisionHighlight") then
                         local hl = Instance.new("Highlight")
-                        hl.Name = "OwnerHighlight"
+                        hl.Name = "VisionHighlight"
                         hl.FillTransparency = 0.85
                         hl.OutlineTransparency = 0
                         hl.Parent = char
                     end
-                    local hl = char:FindFirstChild("OwnerHighlight")
+                    local hl = char:FindFirstChild("VisionHighlight")
                     if hl then
                         hl.FillColor = espColor
                         hl.OutlineColor = espColor
                         hl.Enabled = true
                     end
                 else
-                    if char:FindFirstChild("OwnerHighlight") then
-                        char.OwnerHighlight:Destroy()
+                    if char:FindFirstChild("VisionHighlight") then
+                        char.VisionHighlight:Destroy()
                     end
                 end
 
@@ -1974,7 +1974,7 @@ do
                 end
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p.Character then
-                        if p.Character:FindFirstChild("OwnerHighlight") then p.Character.OwnerHighlight:Destroy() end
+                        if p.Character:FindFirstChild("VisionHighlight") then p.Character.VisionHighlight:Destroy() end
                         if p.Character:FindFirstChild("Head") and p.Character.Head:FindFirstChild("NameESP") then p.Character.Head.NameESP:Destroy() end
                     end
                 end
@@ -1987,8 +1987,8 @@ do
     local function RemoveGunESP()
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj.Name == "GunDrop" then
-                if obj:FindFirstChild("OwnerGunHighlight") then obj.OwnerGunHighlight:Destroy() end
-                if obj:FindFirstChild("OwnerGunLabel") then obj.OwnerGunLabel:Destroy() end
+                if obj:FindFirstChild("VisionGunHighlight") then obj.VisionGunHighlight:Destroy() end
+                if obj:FindFirstChild("VisionGunLabel") then obj.VisionGunLabel:Destroy() end
             end
         end
     end
@@ -1996,20 +1996,20 @@ do
     local function AddGunESP(gun)
         if not gun or not gun:IsA("BasePart") then return end
         
-        if gun:FindFirstChild("OwnerGunHighlight") then gun.OwnerGunHighlight:Destroy() end
-        if gun:FindFirstChild("OwnerGunLabel") then gun.OwnerGunLabel:Destroy() end
+        if gun:FindFirstChild("VisionGunHighlight") then gun.VisionGunHighlight:Destroy() end
+        if gun:FindFirstChild("VisionGunLabel") then gun.VisionGunLabel:Destroy() end
 
         local hl = Instance.new("Highlight")
-        hl.Name = "OwnerGunHighlight"
+        hl.Name = "VisionGunHighlight"
         hl.Adornee = gun
-        hl.FillColor = Color3.fromRGB(150, 150, 150)
+        hl.FillColor = Color3.fromRGB(0, 255, 255)
         hl.OutlineColor = Color3.fromRGB(255, 255, 255)
         hl.FillTransparency = 0.5
         hl.OutlineTransparency = 0
         hl.Parent = gun
 
         local bg = Instance.new("BillboardGui")
-        bg.Name = "OwnerGunLabel"
+        bg.Name = "VisionGunLabel"
         bg.Adornee = gun
         bg.Size = UDim2.new(0, 150, 0, 50)
         bg.StudsOffset = Vector3.new(0, 2, 0)
@@ -2021,7 +2021,7 @@ do
         text.TextSize = 14
         text.Font = Enum.Font.GothamBold
         text.Text = "DROPPED GUN"
-        text.TextColor3 = Color3.fromRGB(200, 200, 200)
+        text.TextColor3 = Color3.fromRGB(0, 255, 255)
         text.TextStrokeTransparency = 0
         text.TextStrokeColor3 = Color3.new(0,0,0)
         text.Parent = bg
@@ -2615,12 +2615,12 @@ do
                 Content="Configuration saved!",
                 Icon = "save",
                 Duration = 5,
-                TitleColor = Color3.fromHex("#808080"),
-                ContentColor = Color3.fromHex("#E0E0E0"),
-                IconColor = Color3.fromHex("#A0A0A0"),
-                BackgroundColor = Color3.fromHex("#121212"),
-                ProgressBarColor = Color3.fromHex("#808080"),
-                CloseButtonColor = Color3.fromHex("#808080"),
+                TitleColor = Color3.fromHex("#00BFFF"),
+                ContentColor = Color3.fromHex("#E6F7FF"),
+                IconColor = Color3.fromHex("#89F7FF"),
+                BackgroundColor = Color3.fromHex("#030407"),
+                ProgressBarColor = Color3.fromHex("#00BFFF"),
+                CloseButtonColor = Color3.fromHex("#00BFFF"),
             })
         end
     })
@@ -2636,12 +2636,12 @@ do
                 Content="Configuration loaded!",
                 Icon = "loader",
                 Duration = 5,
-                TitleColor = Color3.fromHex("#808080"),
-                ContentColor = Color3.fromHex("#E0E0E0"),
-                IconColor = Color3.fromHex("#A0A0A0"),
-                BackgroundColor = Color3.fromHex("#121212"),
-                ProgressBarColor = Color3.fromHex("#808080"),
-                CloseButtonColor = Color3.fromHex("#808080"),
+                TitleColor = Color3.fromHex("#00BFFF"),
+                ContentColor = Color3.fromHex("#E6F7FF"),
+                IconColor = Color3.fromHex("#89F7FF"),
+                BackgroundColor = Color3.fromHex("#030407"),
+                ProgressBarColor = Color3.fromHex("#00BFFF"),
+                CloseButtonColor = Color3.fromHex("#00BFFF"),
             })
         end
     })
@@ -2725,17 +2725,13 @@ do
         Title = "Farming",
         Desc = "Automate gameplay for rewards",
         Icon = "dollar-sign",
-        TextXAlignment = "Center",
-        Opened = true,
+        TextXAlignment = "Center"
     })
 
-    FarmingSection:Toggle({
-        Title = "Auto Farm Coins",
-        Desc = "Automatically teleports to collect coins on the map",
-        Flag = "AutoFarmCoinsToggle",
-        Callback = function(state)
-            Modules.ToggleAutoFarmCoins(state)
-        end
+    FarmingSection:Label({
+        Title = "Are you doing here?",
+        Desc = "Farming features are not yet implemented.",
+        Icon = "alert-circle",
     })
 end
 
