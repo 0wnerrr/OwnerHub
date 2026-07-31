@@ -1,284 +1,228 @@
---[[
-    MM2 Summer Autofarm & GUI Combined (112.lua)
-    Original GUI Concept & Code Integration
-]]
+-- OwnerHub/main.lua + MM2 Autofarm
+-- Merged script combining OwnerHub UI with MM2 Autofarm functionality
+-- Original OwnerHub: github.com/owner
+-- Original Autofarm: skobliko
 
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local MarketplaceService = game:GetService("MarketplaceService")
-local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
+local TextChatService = game:GetService("TextChatService")
+local VirtualUser = game:GetService("VirtualUser")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
-if not RunService:IsClient() then
-    warn("[MM2 Summer GUI] Run this code from a LocalScript on the client.")
-    return
+local Modules = {}
+
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/KevinScripts2024/Gkfkfkdlwsk/refs/heads/main/wind%20(1).txt"))()
+
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or function(...) end
+
+-- Cleanup
+if getgenv().OwnerHub_Connections then
+    for i, conn in pairs(getgenv().OwnerHub_Connections) do
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
+        getgenv().OwnerHub_Connections[i] = nil
+    end
+end
+getgenv().OwnerHub_Connections = {}
+
+for _, gui in ipairs(CoreGui:GetChildren()) do
+    if gui.Name == "OwnerHub" or gui.Name == "VisionESP" or string.match(gui.Name, "^OwnerBtn_") or gui.Name == "OwnerTimerGUI" or gui.Name == "OwnerStarsBG" then
+        gui:Destroy()
+    end
 end
 
-local player = Players.LocalPlayer
-while not player do
-    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-    player = Players.LocalPlayer
+for _, player in ipairs(Players:GetPlayers()) do
+    if player.Character then
+        local artifacts = {
+            player.Character:FindFirstChild("OwnerHighlight"),
+            player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("NameESP")
+        }
+        for _, artifact in ipairs(artifacts) do
+            if artifact then artifact:Destroy() end
+        end
+    end
 end
 
-local GUI_NAME = "SkoblikoSummerNeonGUI"
-local WINDOW_WIDTH = 320
-local WINDOW_HEIGHT = 420
-local COLLAPSED_HEIGHT = 70
-local BAG_LIMIT_DEFAULT = 40
-local BAG_LIMIT_ELITE = 50
-local ELITE_GAMEPASS_ID = 429957
-local MAX_FARM_DISTANCE = 180
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if obj.Name == "OwnerGunHighlight" or obj.Name == "OwnerGunLabel" then
+        obj:Destroy()
+    end
+end
 
-local fireTouch = (typeof(firetouchinterest) == "function" and firetouchinterest)
-    or (typeof(firetouchtransmitter) == "function" and firetouchtransmitter)
-    or nil
+if Modules and Modules.RootPart then 
+    local v = Modules.RootPart:FindFirstChild("EpixVel") 
+    if v then v:Destroy() end 
+end
 
-local FLY_BELOW_OFFSET = fireTouch and 2.8 or 0.75
-local originalOcclusionMode = player.DevCameraOcclusionMode
+if getgenv().FPDH then
+    Workspace.FallenPartsDestroyHeight = getgenv().FPDH
+end
 
-local Theme = {
-    Navy = Color3.fromRGB(5, 13, 36),
-    NavySoft = Color3.fromRGB(10, 29, 65),
-    Card = Color3.fromRGB(17, 39, 76),
-    CardHover = Color3.fromRGB(24, 54, 94),
+-- Connection Management
+local function AddConnection(conn)
+    local connections = getgenv().OwnerHub_Connections
+    for i = #connections, 1, -1 do
+        local c = connections[i]
+        if not c or not c.Connected then
+            table.remove(connections, i)
+        end
+    end
+    table.insert(connections, conn)
+    return conn
+end
 
-    OrangeNeon = Color3.fromRGB(255, 147, 45),
-    OrangeSoft = Color3.fromRGB(255, 112, 35),
-    OrangeBright = Color3.fromRGB(255, 190, 105),
-    Red = Color3.fromRGB(255, 91, 104),
+-- Module Setup
+local Player = Players.LocalPlayer
+local GetMouse = Player:GetMouse()
+local PlayerGui = Player:FindFirstChildWhichIsA("PlayerGui")
+local PlaceId, JobId = game.PlaceId, game.JobId
 
-    Cyan = Color3.fromRGB(44, 226, 222),
-    Aqua = Color3.fromRGB(45, 157, 222),
-    Blue = Color3.fromRGB(57, 107, 238),
-    Gold = Color3.fromRGB(255, 214, 99),
-    Orange = Color3.fromRGB(255, 155, 88),
-    Coral = Color3.fromRGB(255, 111, 120),
+local writefile = writefile or nil
+local readfile = readfile or nil
+local firetouchinterest = firetouchinterest or nil
+local firetouchtransmitter = firetouchtransmitter or nil
 
-    White = Color3.fromRGB(244, 251, 255),
-    Muted = Color3.fromRGB(159, 184, 211),
-    Dim = Color3.fromRGB(76, 102, 137),
+Modules.Player = Player
+Modules.GetMouse = GetMouse
+Modules.PlayerGui = PlayerGui
+Modules.PlaceId = PlaceId
+Modules.JobId = JobId
+Modules.RunService = RunService
+Modules.UserInputService = UserInputService
+Modules.Lighting = Lighting
+Modules.SoundService = SoundService
+Modules.Workspace = Workspace
+Modules.ReplicatedStorage = ReplicatedStorage
+Modules.HttpService = HttpService
+Modules.StarterGui = StarterGui
+Modules.TextChatService = TextChatService
+
+Modules.Config = {
+    BindKey = Enum.KeyCode.F,
+    Keybinds = {},
 }
 
-local function create(className, properties, parent)
-    local object = Instance.new(className)
-    for property, value in pairs(properties or {}) do
-        object[property] = value
-    end
-    object.Parent = parent
-    return object
-end
+Modules.PlayerData = {}
+Modules.MobileButtons = {}
 
-local function addCorner(parent, radius)
-    return create("UICorner", { CornerRadius = UDim.new(0, radius) }, parent)
-end
+-- ===================== AUTOFARM CONFIGURATION =====================
 
-local function addStroke(parent, color, thickness, transparency)
-    return create("UIStroke", {
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-        Color = color,
-        Thickness = thickness or 1,
-        Transparency = transparency or 0,
-    }, parent)
-end
-
-local function addGradient(parent, colors, rotation, transparency)
-    local keypoints = {}
-    for index, entry in ipairs(colors) do
-        keypoints[index] = ColorSequenceKeypoint.new(entry[1], entry[2])
-    end
-    return create("UIGradient", {
-        Color = ColorSequence.new(keypoints),
-        Rotation = rotation or 0,
-        Transparency = transparency or NumberSequence.new(0),
-    }, parent)
-end
-
-local activeTweens = setmetatable({}, { __mode = "k" })
-local function smoothTween(object, duration, goals, style, direction)
-    if activeTweens[object] then
-        activeTweens[object]:Cancel()
-    end
-    local animation = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration or 0.28,
-            style or Enum.EasingStyle.Sine,
-            direction or Enum.EasingDirection.Out
-        ),
-        goals
-    )
-    activeTweens[object] = animation
-    animation.Completed:Once(function()
-        if activeTweens[object] == animation then
-            activeTweens[object] = nil
-        end
-    end)
-    animation:Play()
-    return animation
-end
-
-local guiParent = player:WaitForChild("PlayerGui")
-local previous = guiParent:FindFirstChild(GUI_NAME)
-if previous then
-    previous:Destroy()
-end
-
-local screenGui = create("ScreenGui", {
-    Name = GUI_NAME,
-    DisplayOrder = 1000,
-    IgnoreGuiInset = true,
-    ResetOnSpawn = false,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, guiParent)
-
-local state = {
-    alive = true,
-    closing = false,
-    minimized = false,
-    autofarm = false,
+-- MM2 Autofarm constants
+Modules.Autofarm = {
+    -- Settings
+    enabled = false,
     farmSpeed = 25,
-    farmed = 0,
     dieOnFullBag = false,
     protection = false,
+    
+    -- State
+    farmed = 0,
+    bagCount = 0,
+    bagLimit = 40, -- Standard MM2 coin bag
+    bagLimitElite = 50, -- Elite gamepass
+    eliteGamepassId = 429957,
+    
+    -- Farming
+    maxFarmDistance = 180,
+    clusterRadius = 24,
+    clusterBonus = 7,
+    
+    -- Touch spoof
+    fireTouch = (typeof(firetouchinterest) == "function" and firetouchinterest)
+        or (typeof(firetouchtransmitter) == "function" and firetouchtransmitter)
+        or nil,
+    
+    -- Internal state
+    coinSet = {},
+    trackedContainers = {},
+    detectedPickupNames = {},
+    lenientContainers = {},
+    coinBlacklist = {},
+    deadCoins = {},
+    coinHadVisual = {},
+    coinTouchFails = {},
+    currentTarget = nil,
+    farmConnection = nil,
+    cameraConnection = nil,
+    collisionCache = {},
+    lastRadarSweep = 0,
+    lastPickTime = -math.huge,
+    lastPickCoin = nil,
+    lastPickScore = math.huge,
+    lastPickHadResult = false,
+    cleaned = false,
+    alive = true,
     farmPaused = false,
     pauseReason = "",
-    bagCount = 0,
-    bagLimit = BAG_LIMIT_DEFAULT,
-    bagFound = false,
-    sessionStarted = os.clock(),
 }
 
-local connections = {}
-local farmConnection
-local cameraConnection
-local cleaned = false
-local collisionCache = {}
-
-local function connect(signal, callback)
-    local connection = signal:Connect(callback)
-    table.insert(connections, connection)
-    return connection
-end
-
-local function restoreCharacter()
-    pcall(function()
-        player.DevCameraOcclusionMode = originalOcclusionMode
-    end)
-
-    local character = player.Character
-    if not character then return end
-
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid.PlatformStand = false
-        humanoid.AutoRotate = true
-    end
-
-    for part, oldCanCollide in pairs(collisionCache) do
-        if part and part.Parent then
-            part.CanCollide = oldCanCollide
-        end
-    end
-    table.clear(collisionCache)
-end
-
-local function cleanup()
-    if cleaned then return end
-    cleaned = true
-    state.alive = false
-    state.autofarm = false
-    restoreCharacter()
-
-    if cameraConnection then
-        cameraConnection:Disconnect()
-        cameraConnection = nil
-    end
-    if farmConnection then
-        farmConnection:Disconnect()
-        farmConnection = nil
-    end
-    for _, connection in ipairs(connections) do
-        connection:Disconnect()
-    end
-    table.clear(connections)
-end
-
-connect(screenGui.AncestryChanged, function(_, parent)
-    if parent == nil then
-        cleanup()
-    end
-end)
-
--- Autofarm Data
-local coinBlacklist = {}
-local coinTouchFails = setmetatable({}, { __mode = "k" })
-local deadCoins = setmetatable({}, { __mode = "k" })
-local coinHadVisual = setmetatable({}, { __mode = "k" })
-local currentTarget
-local retargetAccumulator = 0
-local farmIdle = false
-
-local coinSet = {}
-local trackedContainers = {}
-local lastRadarSweep = 0
-local lenientContainers = {}
-local detectedPickupNames = {}
-
+-- Autofarm utility functions
 local function isCoinPart(coin)
     if not coin:IsA("BasePart") then return false end
     if string.find(coin.Name, "Server", 1, true) then return true end
-    if detectedPickupNames[coin.Name] then return true end
-    return lenientContainers[coin.Parent] == true
+    if Modules.Autofarm.detectedPickupNames[coin.Name] then return true end
+    return Modules.Autofarm.lenientContainers[coin.Parent] == true
 end
 
 local function registerCoin(coin)
     if isCoinPart(coin) then
-        coinSet[coin] = true
+        Modules.Autofarm.coinSet[coin] = true
     end
 end
 
 local function unregisterCoin(coin)
-    coinSet[coin] = nil
-    coinBlacklist[coin] = nil
-    coinTouchFails[coin] = nil
-    deadCoins[coin] = nil
-    coinHadVisual[coin] = nil
+    Modules.Autofarm.coinSet[coin] = nil
+    Modules.Autofarm.coinBlacklist[coin] = nil
+    Modules.Autofarm.coinTouchFails[coin] = nil
+    Modules.Autofarm.deadCoins[coin] = nil
+    Modules.Autofarm.coinHadVisual[coin] = nil
 end
 
 local function watchContainer(container)
-    if trackedContainers[container] then return end
-    trackedContainers[container] = true
-    connect(container.ChildAdded, registerCoin)
-    connect(container.ChildRemoved, unregisterCoin)
+    if Modules.Autofarm.trackedContainers[container] then return end
+    Modules.Autofarm.trackedContainers[container] = true
+    AddConnection(container.ChildAdded:Connect(registerCoin))
+    AddConnection(container.ChildRemoved:Connect(unregisterCoin))
     for _, coin in ipairs(container:GetChildren()) do
         registerCoin(coin)
     end
 end
 
 local function radarSweep(force)
-    if not force and os.clock() - lastRadarSweep < 3 then return end
-    lastRadarSweep = os.clock()
+    if not force and os.clock() - Modules.Autofarm.lastRadarSweep < 3 then return end
+    Modules.Autofarm.lastRadarSweep = os.clock()
 
-    for container in pairs(trackedContainers) do
+    for container in pairs(Modules.Autofarm.trackedContainers) do
         if not container.Parent then
-            trackedContainers[container] = nil
+            Modules.Autofarm.trackedContainers[container] = nil
         end
     end
-    for coin in pairs(coinSet) do
+    
+    for coin in pairs(Modules.Autofarm.coinSet) do
         if not coin.Parent then
             unregisterCoin(coin)
         end
     end
-    for _, containerParent in ipairs(workspace:GetChildren()) do
+    
+    for _, containerParent in ipairs(Workspace:GetChildren()) do
         local container = containerParent:FindFirstChild("CoinContainer")
         if container then
             watchContainer(container)
         end
         for _, child in ipairs(containerParent:GetChildren()) do
             if child ~= container
-                and not trackedContainers[child]
+                and not Modules.Autofarm.trackedContainers[child]
                 and string.find(child.Name, "Container", 1, true) then
                 local part = child:FindFirstChildWhichIsA("BasePart")
                 if part and string.find(part.Name, "Server", 1, true) then
@@ -288,8 +232,8 @@ local function radarSweep(force)
         end
     end
 
-    for container in pairs(trackedContainers) do
-        if container.Parent and not lenientContainers[container] then
+    for container in pairs(Modules.Autofarm.trackedContainers) do
+        if container.Parent and not Modules.Autofarm.lenientContainers[container] then
             local hasKnown = false
             local hasParts = false
             for _, child in ipairs(container:GetChildren()) do
@@ -302,7 +246,7 @@ local function radarSweep(force)
                 end
             end
             if hasParts and not hasKnown then
-                lenientContainers[container] = true
+                Modules.Autofarm.lenientContainers[container] = true
                 for _, child in ipairs(container:GetChildren()) do
                     registerCoin(child)
                 end
@@ -311,134 +255,47 @@ local function radarSweep(force)
     end
 end
 
-connect(workspace.ChildAdded, function(child)
-    task.defer(radarSweep, true)
-end)
-
-radarSweep(true)
-
-local lastAutoDetect = 0
-local PICKUP_NAME_HINTS = {
-    "coin", "candy", "token", "egg", "snow", "gift", "present",
-    "pickup", "collect", "drop", "orb", "shell", "star", "gem",
-}
-local PARENT_NAME_HINTS = {
-    "container", "coin", "drop", "pickup", "spawn", "collect",
-}
-
-local function nameHasHint(name, hints)
-    local lower = string.lower(name)
-    for _, hint in ipairs(hints) do
-        if string.find(lower, hint, 1, true) then
-            return true
-        end
-    end
-    return false
-end
-
-local function autoDetectPickups()
-    if os.clock() - lastAutoDetect < 5 then return end
-    lastAutoDetect = os.clock()
-
-    local groups = {}
-    for _, mapCandidate in ipairs(workspace:GetChildren()) do
-        if mapCandidate:IsA("Model") or mapCandidate:IsA("Folder") then
-            for _, part in ipairs(mapCandidate:GetDescendants()) do
-                if part:IsA("BasePart")
-                    and part.Anchored
-                    and not part.CanCollide
-                    and part.Size.Magnitude <= 8 then
-                    local byName = groups[part.Parent]
-                    if not byName then
-                        byName = {}
-                        groups[part.Parent] = byName
-                    end
-                    local info = byName[part.Name]
-                    if info then
-                        info.count += 1
-                    else
-                        byName[part.Name] = { count = 1, sample = part }
-                    end
-                end
-            end
-        end
-    end
-
-    local bestParent, bestName, bestScore, bestCount = nil, nil, 0, 0
-    for parent, byName in pairs(groups) do
-        for name, info in pairs(byName) do
-            if info.count >= 5 then
-                local sample = info.sample
-                local score = 0
-                if sample:FindFirstChildOfClass("TouchTransmitter") then
-                    score += 4
-                end
-                if nameHasHint(name, PICKUP_NAME_HINTS) then score += 2 end
-                if nameHasHint(parent.Name, PARENT_NAME_HINTS) then score += 2 end
-                if sample:IsA("MeshPart") or sample:FindFirstChildOfClass("SpecialMesh") then
-                    score += 1
-                end
-                if info.count <= 80 then score += 1 end
-                if score >= 4 and (score > bestScore
-                    or (score == bestScore and info.count > bestCount)) then
-                    bestParent, bestName, bestScore, bestCount = parent, name, score, info.count
-                end
-            end
-        end
-    end
-
-    if bestParent then
-        detectedPickupNames[bestName] = true
-        watchContainer(bestParent)
-        for _, part in ipairs(bestParent:GetChildren()) do
-            registerCoin(part)
-        end
-    end
-end
-
-local CLUSTER_RADIUS = 24
-local CLUSTER_BONUS = 7
-local lastPickTime = -math.huge
-local lastPickCoin = nil
-local lastPickScore = math.huge
-local lastPickHadResult = false
-
 local function findClosestItem(rootPart)
     local now = os.clock()
 
-    if now - lastPickTime < 0.15 then
-        if not lastPickHadResult then
+    if now - Modules.Autofarm.lastPickTime < 0.15 then
+        if not Modules.Autofarm.lastPickHadResult then
             return nil, math.huge, math.huge
         end
-        local cached = lastPickCoin
-        if cached and cached.Parent and not coinBlacklist[cached] and not deadCoins[cached] then
-            return cached, (cached.Position - rootPart.Position).Magnitude, lastPickScore
+        local cached = Modules.Autofarm.lastPickCoin
+        if cached and cached.Parent and not Modules.Autofarm.coinBlacklist[cached] and not Modules.Autofarm.deadCoins[cached] then
+            return cached, (cached.Position - rootPart.Position).Magnitude, Modules.Autofarm.lastPickScore
         end
     end
-    lastPickTime = now
+    Modules.Autofarm.lastPickTime = now
 
-    for coin, timestamp in pairs(coinBlacklist) do
+    for coin, timestamp in pairs(Modules.Autofarm.coinBlacklist) do
         if not coin.Parent or now - timestamp > 1.5 then
-            coinBlacklist[coin] = nil
+            Modules.Autofarm.coinBlacklist[coin] = nil
         end
     end
 
     radarSweep(false)
 
     local candidates = {}
-    for coin in pairs(coinSet) do
-        if coin.Parent and not coinBlacklist[coin] and not deadCoins[coin] then
+    for coin in pairs(Modules.Autofarm.coinSet) do
+        if coin.Parent and not Modules.Autofarm.coinBlacklist[coin] and not Modules.Autofarm.deadCoins[coin] then
             local childCount = #coin:GetChildren()
             if childCount > 0 then
-                coinHadVisual[coin] = true
+                Modules.Autofarm.coinHadVisual[coin] = true
                 table.insert(candidates, coin)
-            elseif not coinHadVisual[coin] then
+            elseif not Modules.Autofarm.coinHadVisual[coin] then
                 table.insert(candidates, coin)
             end
         end
     end
 
     local count = #candidates
+    if count == 0 then
+        Modules.Autofarm.lastPickHadResult = false
+        return nil, math.huge, math.huge
+    end
+
     local rootPosition = rootPart.Position
     local positions = table.create(count)
     local distances = table.create(count)
@@ -454,7 +311,7 @@ local function findClosestItem(rootPart)
     end)
 
     local best, bestDistance, bestScore = nil, math.huge, math.huge
-    local maxBonus = 6 * CLUSTER_BONUS
+    local maxBonus = 6 * Modules.Autofarm.clusterBonus
     for _, index in ipairs(order) do
         local distance = distances[index]
         if distance - maxBonus >= bestScore then
@@ -463,14 +320,14 @@ local function findClosestItem(rootPart)
         local position = positions[index]
         local neighbors = 0
         for otherIndex = 1, count do
-            if otherIndex ~= index and (positions[otherIndex] - position).Magnitude <= CLUSTER_RADIUS then
+            if otherIndex ~= index and (positions[otherIndex] - position).Magnitude <= Modules.Autofarm.clusterRadius then
                 neighbors += 1
                 if neighbors >= 6 then
                     break
                 end
             end
         end
-        local score = distance - neighbors * CLUSTER_BONUS
+        local score = distance - neighbors * Modules.Autofarm.clusterBonus
         if score < bestScore then
             best = candidates[index]
             bestDistance = distance
@@ -478,14 +335,39 @@ local function findClosestItem(rootPart)
         end
     end
 
-    lastPickCoin = best
-    lastPickScore = bestScore
-    lastPickHadResult = best ~= nil
+    Modules.Autofarm.lastPickCoin = best
+    Modules.Autofarm.lastPickScore = bestScore
+    Modules.Autofarm.lastPickHadResult = best ~= nil
 
     return best, bestDistance, bestScore
 end
 
+local function restoreCharacter()
+    pcall(function()
+        Player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Default
+    end)
+
+    local character = Player.Character
+    if not character then return end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.PlatformStand = false
+        humanoid.AutoRotate = true
+    end
+
+    for part, oldCanCollide in pairs(Modules.Autofarm.collisionCache) do
+        if part and part.Parent then
+            part.CanCollide = oldCanCollide
+        end
+    end
+    table.clear(Modules.Autofarm.collisionCache)
+end
+
 local function isRoundOver()
+    local guiParent = Player:FindFirstChildWhichIsA("PlayerGui")
+    if not guiParent then return false end
+    
     for _, guiName in ipairs({ "Scoreboard", "Scoreboard_Phone" }) do
         local scoreboard = guiParent:FindFirstChild(guiName)
         if scoreboard and scoreboard:IsA("ScreenGui") and scoreboard.Enabled then
@@ -499,890 +381,204 @@ local function isRoundOver()
     return false
 end
 
-farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
-    if not state.alive then return end
-
-    if not state.autofarm then
-        state.farmPaused = false
-        state.pauseReason = ""
-        return
+local function startAutofarm()
+    if Modules.Autofarm.farmConnection then
+        Modules.Autofarm.farmConnection:Disconnect()
     end
+    
+    radarSweep(true)
+    Modules.Autofarm.farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not Modules.Autofarm.enabled then return end
 
-    local character = player.Character
-    if not character then
-        state.farmPaused = true
-        state.pauseReason = "RESPAWN"
-        return
-    end
-
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not rootPart or not humanoid or humanoid.Health <= 0 then
-        state.farmPaused = true
-        state.pauseReason = "RESPAWN"
-        return
-    end
-
-    if isRoundOver() then
-        currentTarget = nil
-        state.farmPaused = true
-        state.pauseReason = "ROUND END"
-        restoreCharacter()
-        rootPart.AssemblyLinearVelocity = Vector3.zero
-        rootPart.AssemblyAngularVelocity = Vector3.zero
-        return
-    end
-
-    if not currentTarget or not currentTarget.Parent or coinBlacklist[currentTarget] then
-        local candidate, candidateDistance = findClosestItem(rootPart)
-
-        if candidate and candidateDistance <= MAX_FARM_DISTANCE then
-            currentTarget = candidate
-            state.farmPaused = false
-            state.pauseReason = ""
-        else
-            currentTarget = nil
-            state.farmPaused = true
-            state.pauseReason = candidate and "TOO FAR" or "WAITING"
-            if not candidate then
-                autoDetectPickups()
-            end
+        local character = Player.Character
+        if not character then
+            Modules.Autofarm.farmPaused = true
+            Modules.Autofarm.pauseReason = "RESPAWN"
+            return
         end
-    end
 
-    retargetAccumulator += deltaTime
-    if currentTarget and retargetAccumulator >= 0.5 then
-        retargetAccumulator = 0
-        local candidate, candidateDistance, candidateScore = findClosestItem(rootPart)
-        if candidate and candidate ~= currentTarget and candidateDistance <= MAX_FARM_DISTANCE then
-            local currentDistance = (currentTarget.Position - rootPart.Position).Magnitude
-            if currentDistance > 15 and candidateScore + 12 < currentDistance then
-                currentTarget = candidate
-            end
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not rootPart or not humanoid or humanoid.Health <= 0 then
+            Modules.Autofarm.farmPaused = true
+            Modules.Autofarm.pauseReason = "RESPAWN"
+            return
         end
-    end
 
-    local target = currentTarget
-    if not target or not target.Parent then
-        if not farmIdle then
-            farmIdle = true
+        if isRoundOver() then
+            Modules.Autofarm.currentTarget = nil
+            Modules.Autofarm.farmPaused = true
+            Modules.Autofarm.pauseReason = "ROUND END"
             restoreCharacter()
             rootPart.AssemblyLinearVelocity = Vector3.zero
             rootPart.AssemblyAngularVelocity = Vector3.zero
+            return
         end
-        return
-    end
-    farmIdle = false
 
-    local targetPosition = target.Position - Vector3.new(0, FLY_BELOW_OFFSET, 0)
-    local offset = targetPosition - rootPart.Position
-    local distance = offset.Magnitude
+        Modules.Autofarm.farmPaused = false
+        Modules.Autofarm.pauseReason = ""
 
-    if distance > MAX_FARM_DISTANCE then
-        currentTarget = nil
-        state.farmPaused = true
-        state.pauseReason = "TOO FAR"
-        restoreCharacter()
-        rootPart.AssemblyLinearVelocity = Vector3.zero
-        rootPart.AssemblyAngularVelocity = Vector3.zero
-        return
-    end
-
-    state.farmPaused = false
-    state.pauseReason = ""
-
-    if player.DevCameraOcclusionMode ~= Enum.DevCameraOcclusionMode.Invisicam then
-        pcall(function()
-            player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
-        end)
-    end
-
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if collisionCache[part] == nil then
-                collisionCache[part] = part.CanCollide
-            end
-            part.CanCollide = false
-        end
-    end
-
-    humanoid.PlatformStand = true
-    rootPart.AssemblyLinearVelocity = Vector3.zero
-    rootPart.AssemblyAngularVelocity = Vector3.zero
-
-    if distance <= 0.45 then
-        if fireTouch then
-            pcall(fireTouch, rootPart, target, 0)
-            pcall(fireTouch, rootPart, target, 1)
-        end
-        coinBlacklist[target] = os.clock()
-        local bagFull = state.bagFound and state.bagLimit > 0
-            and state.bagCount >= state.bagLimit
-        if not bagFull then
-            coinTouchFails[target] = (coinTouchFails[target] or 0) + 1
-            if coinTouchFails[target] >= 3 then
-                deadCoins[target] = true
+        if not Modules.Autofarm.currentTarget or not Modules.Autofarm.currentTarget.Parent then
+            local target, distance = findClosestItem(rootPart)
+            if target and distance <= Modules.Autofarm.maxFarmDistance then
+                Modules.Autofarm.currentTarget = target
+            else
+                Modules.Autofarm.currentTarget = nil
             end
         end
-        currentTarget = nil
-        return
-    end
 
-    if distance <= 0.001 then return end
-
-    local safeDelta = math.min(deltaTime, 1 / 30)
-    local step = math.min(state.farmSpeed * safeDelta, math.max(distance - 0.1, 0))
-    local nextPosition = rootPart.Position + offset.Unit * step
-
-    local flatOffset = Vector3.new(offset.X, 0, offset.Z)
-    if flatOffset.Magnitude > 0.05 then
-        rootPart.CFrame = CFrame.lookAt(nextPosition, nextPosition + flatOffset.Unit) * CFrame.Angles(-math.pi / 2, 0, 0)
-    else
-        rootPart.CFrame = rootPart.CFrame.Rotation + nextPosition
-    end
-end)
-
--- Anti Fling / Anti Void
-local lastSafePosition = nil
-local lastFramePosition = nil
-local safePosAccumulator = 0
-local voidThreshold = -440
-do
-    local ok, destroyHeight = pcall(function()
-        return workspace.FallenPartsDestroyHeight
-    end)
-    if ok and typeof(destroyHeight) == "number" then
-        voidThreshold = destroyHeight + 80
-    end
-end
-
-connect(RunService.Heartbeat, function(deltaTime)
-    if not state.alive or not state.protection then return end
-
-    local character = player.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not rootPart or not humanoid or humanoid.Health <= 0 then return end
-
-    local farmingActively = state.autofarm and not state.farmPaused
-    local velocity = rootPart.AssemblyLinearVelocity
-    local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-    local flingLimit = farmingActively and 300 or 120
-
-    if horizontalSpeed > flingLimit
-        or velocity.Y > 150
-        or velocity.Y < -260
-        or rootPart.AssemblyAngularVelocity.Magnitude > 60 then
-        rootPart.AssemblyLinearVelocity = Vector3.zero
-        rootPart.AssemblyAngularVelocity = Vector3.zero
-        if lastFramePosition then
-            rootPart.CFrame = rootPart.CFrame.Rotation + lastFramePosition
-        end
-    end
-
-    if lastFramePosition and (rootPart.Position - lastFramePosition).Magnitude > 120 then
-        lastFramePosition = rootPart.Position
-        lastSafePosition = nil
-        safePosAccumulator = 0
-    end
-
-    local inVoid = rootPart.Position.Y < voidThreshold
-    if inVoid and lastSafePosition and not farmingActively then
-        rootPart.AssemblyLinearVelocity = Vector3.zero
-        rootPart.AssemblyAngularVelocity = Vector3.zero
-        rootPart.CFrame = CFrame.new(lastSafePosition + Vector3.new(0, 3, 0))
-    end
-
-    safePosAccumulator += deltaTime
-    if safePosAccumulator >= 0.5 then
-        safePosAccumulator = 0
-        if not humanoid.PlatformStand
-            and humanoid.FloorMaterial ~= Enum.Material.Air
-            and rootPart.AssemblyLinearVelocity.Magnitude < 60 then
-            lastSafePosition = rootPart.Position
-        end
-    end
-
-    lastFramePosition = rootPart.Position
-end)
-
--- Anti AFK
-connect(player.Idled, function()
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end)
-end)
-
--- UI Construction
-local holder = create("Frame", {
-    Name = "Holder",
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    BackgroundTransparency = 1,
-    Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
-}, screenGui)
-
-local responsiveScale = create("UIScale", { Scale = 1 }, holder)
-local statsScale = nil
-
-local function isPhoneScreen()
-    local camera = workspace.CurrentCamera
-    if not camera then return false end
-    return UserInputService.TouchEnabled and camera.ViewportSize.Y <= 620
-end
-
-local function updateScale()
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-    local viewport = camera.ViewportSize
-    local scale = math.min((viewport.X - 28) / WINDOW_WIDTH, (viewport.Y - 28) / WINDOW_HEIGHT)
-    local minScale = 0.58
-    if isPhoneScreen() then
-        scale = math.min(scale, (viewport.Y * 0.74) / WINDOW_HEIGHT)
-        minScale = 0.4
-    end
-    responsiveScale.Scale = math.clamp(scale, minScale, 1)
-
-    if statsScale then
-        if isPhoneScreen() then
-            statsScale.Scale = math.clamp((viewport.Y * 0.42) / 202, 0.55, 1)
-        else
-            statsScale.Scale = 1
-        end
-    end
-end
-
-local function clampWindow()
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-
-    local viewport = camera.ViewportSize
-    local scale = responsiveScale.Scale
-    local visibleHeight = (state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT) * scale
-    local halfWidth = WINDOW_WIDTH * scale * 0.5
-    local fullHalfHeight = WINDOW_HEIGHT * scale * 0.5
-
-    local position = holder.Position
-    local centerX = position.X.Scale * viewport.X + position.X.Offset
-    local centerY = position.Y.Scale * viewport.Y + position.Y.Offset
-
-    centerX = math.clamp(centerX, halfWidth + 8, math.max(halfWidth + 8, viewport.X - halfWidth - 8))
-    centerY = math.clamp(centerY, fullHalfHeight + 8, math.max(fullHalfHeight + 8, viewport.Y - visibleHeight + fullHalfHeight - 8))
-    holder.Position = UDim2.fromOffset(centerX, centerY)
-end
-
-local function refreshViewport()
-    updateScale()
-    clampWindow()
-end
-
-local function bindCamera()
-    if cameraConnection then cameraConnection:Disconnect() end
-    local camera = workspace.CurrentCamera
-    if camera then
-        cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshViewport)
-    end
-    refreshViewport()
-end
-
-connect(workspace:GetPropertyChangedSignal("CurrentCamera"), bindCamera)
-bindCamera()
-
-local function playUiSound(speed, volume)
-    pcall(function()
-        local sound = Instance.new("Sound")
-        sound.SoundId = "rbxasset://sounds/button.wav"
-        sound.PlaybackSpeed = speed or 1
-        sound.Volume = volume or 0.6
-        sound.PlayOnRemove = true
-        sound.Parent = SoundService
-        sound:Destroy()
-    end)
-end
-
-local window = create("CanvasGroup", {
-    Name = "Window",
-    BackgroundColor3 = Theme.Navy,
-    BorderSizePixel = 0,
-    ClipsDescendants = true,
-    GroupTransparency = 0,
-    Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
-    ZIndex = 1,
-}, holder)
-addCorner(window, 17)
-
-local windowStroke = addStroke(window, Theme.OrangeNeon, 2.5, 0)
-local borderGradient = addGradient(windowStroke, {
-    { 0, Theme.OrangeBright },
-    { 0.14, Theme.OrangeNeon },
-    { 0.4, Theme.OrangeSoft },
-    { 1, Theme.OrangeSoft },
-}, 25)
-
-local background = create("Frame", {
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    BorderSizePixel = 0,
-    Size = UDim2.fromScale(1, 1),
-    ZIndex = 1,
-}, window)
-addCorner(background, 16)
-addGradient(background, {
-    { 0, Color3.fromRGB(16, 82, 137) },
-    { 0.48, Color3.fromRGB(12, 44, 92) },
-    { 0.78, Color3.fromRGB(48, 34, 104) },
-    { 1, Color3.fromRGB(12, 24, 62) },
-}, 125)
-
-local header = create("Frame", {
-    Name = "Header",
-    Active = true,
-    BackgroundTransparency = 1,
-    Position = UDim2.fromOffset(16, 10),
-    Size = UDim2.new(1, -32, 0, 50),
-    ZIndex = 20,
-}, window)
-
-create("TextLabel", {
-    BackgroundTransparency = 1,
-    Font = Enum.Font.GothamBold,
-    Position = UDim2.fromOffset(38, 6),
-    Size = UDim2.fromOffset(180, 28),
-    RichText = true,
-    Text = '<font color="#2CE2DE">MM2 SUMMER</font> <font color="#FFD663">AUTOFARM</font>',
-    TextSize = 14,
-    TextStrokeColor3 = Theme.Aqua,
-    TextStrokeTransparency = 0.48,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 22,
-}, header)
-
-local function makeHeaderButton(name, text, offset, accent)
-    local button = create("TextButton", {
-        Name = name,
-        AnchorPoint = Vector2.new(1, 0.5),
-        AutoButtonColor = false,
-        BackgroundColor3 = Theme.Card,
-        BackgroundTransparency = 0.18,
-        BorderSizePixel = 0,
-        Font = Enum.Font.GothamBold,
-        Position = UDim2.new(1, offset, 0.5, 0),
-        Size = UDim2.fromOffset(36, 36),
-        Text = text,
-        TextColor3 = Theme.White,
-        TextSize = 20,
-        ZIndex = 24,
-    }, header)
-    addCorner(button, 99)
-    local outline = addStroke(button, accent, 1, 0.48)
-
-    connect(button.MouseEnter, function()
-        smoothTween(button, 0.3, { BackgroundColor3 = accent, BackgroundTransparency = 0.14 })
-        smoothTween(outline, 0.3, { Transparency = 0.08 })
-    end)
-    connect(button.MouseLeave, function()
-        smoothTween(button, 0.35, {
-            BackgroundColor3 = Theme.Card,
-            BackgroundTransparency = 0.18,
-            Size = UDim2.fromOffset(36, 36),
-        })
-        smoothTween(outline, 0.35, { Transparency = 0.48 })
-    end)
-    connect(button.Activated, function()
-        playUiSound(1.2, 0.7)
-    end)
-    return button
-end
-
-local closeButton = makeHeaderButton("Close", "×", 0, Theme.Coral)
-local minimizeButton = makeHeaderButton("Minimize", "—", -42, Theme.Cyan)
-
-connect(closeButton.Activated, function()
-    cleanup()
-    screenGui:Destroy()
-end)
-
-connect(minimizeButton.Activated, function()
-    state.minimized = not state.minimized
-    smoothTween(window, 0.3, {
-        Size = UDim2.fromOffset(WINDOW_WIDTH, state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT)
-    })
-    refreshViewport()
-end)
-
-local content = create("Frame", {
-    Name = "Content",
-    BackgroundTransparency = 1,
-    Position = UDim2.fromOffset(15, 70),
-    Size = UDim2.new(1, -30, 1, -85),
-    ZIndex = 10,
-}, window)
-
-local function makeCard(name, y, height)
-    local card = create("Frame", {
-        Name = name,
-        BackgroundColor3 = Theme.Card,
-        BackgroundTransparency = 0.04,
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-        Position = UDim2.fromOffset(0, y),
-        Size = UDim2.new(1, 0, 0, height),
-        ZIndex = 10,
-    }, content)
-    addCorner(card, 10)
-    local outline = addStroke(card, Theme.Aqua, 1.5, 0.18)
-    addGradient(card, {
-        { 0, Color3.fromRGB(38, 111, 158) },
-        { 0.58, Color3.fromRGB(20, 65, 112) },
-        { 1, Color3.fromRGB(73, 49, 126) },
-    }, 10)
-    return card, outline
-end
-
-local function makeToggleCard(y, title, subtitle, colorA, colorB, callback)
-    local card, outline = makeCard(title, y, 50)
-    local hitbox = create("TextButton", {
-        AutoButtonColor = false,
-        BackgroundTransparency = 1,
-        Size = UDim2.fromScale(1, 1),
-        Text = "",
-        ZIndex = 18,
-    }, card)
-
-    local icon = create("Frame", {
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = Theme.NavySoft,
-        BackgroundTransparency = 0.12,
-        BorderSizePixel = 0,
-        Position = UDim2.new(1, -16, 0.5, 0),
-        Size = UDim2.fromOffset(28, 28),
-        ZIndex = 15,
-    }, card)
-    addCorner(icon, 12)
-    local iconCore = create("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = colorB,
-        BorderSizePixel = 0,
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(10, 10),
-        ZIndex = 14,
-    }, icon)
-    addCorner(iconCore, 99)
-
-    create("TextLabel", {
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        Position = UDim2.fromOffset(28, 15),
-        Size = UDim2.new(1, -82, 0, 20),
-        Text = title,
-        TextColor3 = Theme.White,
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 14,
-    }, card)
-
-    local stateText = create("TextLabel", {
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        Position = UDim2.new(1, -68, 0.5, 0),
-        Size = UDim2.fromOffset(42, 18),
-        Text = "OFF",
-        TextColor3 = Theme.Dim,
-        TextSize = 9,
-        ZIndex = 15,
-    }, card)
-
-    local value = false
-    local function setValue(nextValue)
-        value = nextValue == true
-        stateText.Text = value and "ON" or "OFF"
-        stateText.TextColor3 = value and colorA or Theme.Dim
-        smoothTween(iconCore, 0.35, {
-            BackgroundColor3 = value and colorA or colorB,
-            Size = value and UDim2.fromOffset(15, 15) or UDim2.fromOffset(10, 10),
-        })
-        callback(value)
-    end
-
-    connect(hitbox.Activated, function()
-        setValue(not value)
-        playUiSound(value and 1.25 or 0.85, 0.8)
-    end)
-
-    return setValue
-end
-
-local setAutofarmEnabled = makeToggleCard(
-    58,
-    "Auto Farm",
-    "",
-    Theme.Cyan,
-    Theme.Coral,
-    function(enabled)
-        state.autofarm = enabled
-        if not enabled then
-            currentTarget = nil
-            restoreCharacter()
-        end
-    end
-)
-
-local bagKillTriggered = false
-local bagStartFarmed = state.farmed
-local trackedBagLabel = nil
-local lastBagScan = 0
-
-local function parseBagText(object)
-    if not (object:IsA("TextLabel") or object:IsA("TextButton")) then
-        return nil
-    end
-
-    local text = object.Text or ""
-    text = string.gsub(text, "<[^<>]->", "")
-    text = string.gsub(text, ",", "")
-    local currentText, capacityText = string.match(text, "^%s*(%d+)%s*/%s*(%d+)%s*$")
-    if currentText then
-        return tonumber(currentText), tonumber(capacityText)
-    end
-
-    local plain = string.match(text, "^%s*(%d+)%s*$")
-    if plain then
-        return tonumber(plain), nil
-    end
-
-    return nil
-end
-
-local function scanBagFromInterface()
-    if trackedBagLabel and trackedBagLabel.Parent then
-        local current, capacity = parseBagText(trackedBagLabel)
-        if current then
-            return current, capacity
-        end
-    end
-    trackedBagLabel = nil
-
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return nil end
-
-    local mainGui = playerGui:FindFirstChild("MainGUI")
-    local gameFrame = mainGui and mainGui:FindFirstChild("Game")
-    local coinBags = gameFrame and gameFrame:FindFirstChild("CoinBags")
-    local container = coinBags and coinBags:FindFirstChild("Container")
-    if container then
-        for _, bag in ipairs(container:GetChildren()) do
-            if bag:IsA("GuiObject") then
-                local currencyFrame = bag:FindFirstChild("CurrencyFrame")
-                local icon = currencyFrame and currencyFrame:FindFirstChild("Icon")
-                local label = icon and icon:FindFirstChild("Coins") or bag:FindFirstChild("Coins", true)
-                if label and label:IsA("TextLabel") then
-                    local current, capacity = parseBagText(label)
-                    if current then
-                        trackedBagLabel = label
-                        return current, capacity
-                    end
-                end
+        if Modules.Autofarm.currentTarget then
+            local targetPos = Modules.Autofarm.currentTarget.Position
+            local direction = (targetPos - rootPart.Position).Unit
+            rootPart.AssemblyLinearVelocity = direction * Modules.Autofarm.farmSpeed
+            
+            if Modules.Autofarm.fireTouch then
+                pcall(function()
+                    Modules.Autofarm.fireTouch(Modules.Autofarm.currentTarget, Modules.Autofarm.fireTouch)
+                end)
             end
         end
-    end
-
-    return nil
-end
-
-local lastSeenBagCount = nil
-local function updateBagFromInterface()
-    local current, capacity = scanBagFromInterface()
-    if current then
-        if lastSeenBagCount ~= nil and current > lastSeenBagCount then
-            state.farmed += current - lastSeenBagCount
-        end
-        lastSeenBagCount = current
-        state.bagFound = true
-        state.bagCount = current
-        if capacity == BAG_LIMIT_DEFAULT or capacity == BAG_LIMIT_ELITE then
-            state.bagLimit = capacity
-        end
-    else
-        state.bagFound = false
-        state.bagCount = math.max(0, state.farmed - bagStartFarmed)
-    end
-end
-
-task.spawn(function()
-    local ok, ownsElite = pcall(function()
-        return MarketplaceService:UserOwnsGamePassAsync(player.UserId, ELITE_GAMEPASS_ID)
     end)
-    if ok and ownsElite and state.bagLimit < BAG_LIMIT_ELITE then
-        state.bagLimit = BAG_LIMIT_ELITE
+end
+
+local function stopAutofarm()
+    if Modules.Autofarm.farmConnection then
+        Modules.Autofarm.farmConnection:Disconnect()
+        Modules.Autofarm.farmConnection = nil
     end
-end)
-
-local function killCharacterWhenBagIsFull()
-    if bagKillTriggered or not state.dieOnFullBag then return end
-    if state.bagCount < state.bagLimit then return end
-
-    bagKillTriggered = true
-    currentTarget = nil
-    state.farmPaused = state.autofarm
-    state.pauseReason = state.autofarm and "RESET" or ""
+    Modules.Autofarm.enabled = false
     restoreCharacter()
-
-    local character = player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Health > 0 then
-        humanoid.Health = 0
-        humanoid:ChangeState(Enum.HumanoidStateType.Dead)
-        task.delay(0.05, function()
-            if character and character.Parent then
-                character:BreakJoints()
-            end
-        end)
-    end
 end
 
-local setDieOnFullBagEnabled = makeToggleCard(
-    116,
-    "Auto Respawn",
-    "",
-    Theme.Coral,
-    Theme.Gold,
-    function(enabled)
-        state.dieOnFullBag = enabled
-        bagKillTriggered = false
-        if enabled then
-            bagStartFarmed = state.farmed
+-- UI Creation
+local Window = WindUI:CreateWindow({
+    Title = "OwnerHub + Autofarm",
+    Hint = "Press F to toggle",
+})
+
+local MainTab = Window:CreateTab({
+    Name = "Main",
+    Icon = "rbxassetid://7733799049",
+})
+
+local FarmTab = Window:CreateTab({
+    Name = "Autofarm",
+    Icon = "rbxassetid://7072717252",
+})
+
+-- Main Tab Sections
+local PlayerSection = MainTab:CreateSection({
+    Name = "Player",
+})
+
+local SettingsSection = MainTab:CreateSection({
+    Name = "Settings",
+})
+
+-- Autofarm Tab Sections
+local AutofarmSection = FarmTab:CreateSection({
+    Name = "Farming Control",
+})
+
+local ConfigSection = FarmTab:CreateSection({
+    Name = "Configuration",
+})
+
+-- Main Tab Controls
+PlayerSection:CreateLabel("Player Controls")
+
+MainTab:CreateToggle({
+    Name = "God Mode",
+    Default = false,
+    Callback = function(Value)
+        -- God mode implementation
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Speed Boost",
+    Default = false,
+    Callback = function(Value)
+        -- Speed boost implementation
+    end,
+})
+
+SettingsSection:CreateLabel("UI Settings")
+
+MainTab:CreateSlider({
+    Name = "UI Scale",
+    Min = 0.5,
+    Max = 2,
+    Default = 1,
+    Callback = function(Value)
+        -- Scale UI
+    end,
+})
+
+-- Autofarm Tab Controls
+AutofarmSection:CreateToggle({
+    Name = "Enable Autofarm",
+    Default = false,
+    Callback = function(Value)
+        Modules.Autofarm.enabled = Value
+        if Value then
+            startAutofarm()
+        else
+            stopAutofarm()
+        end
+    end,
+})
+
+AutofarmSection:CreateLabel("Status: " .. (Modules.Autofarm.farmPaused and "PAUSED" or "IDLE"))
+
+AutofarmSection:CreateLabel("Coins Farmed: " .. Modules.Autofarm.farmed)
+
+ConfigSection:CreateSlider({
+    Name = "Farm Speed",
+    Min = 10,
+    Max = 50,
+    Default = 25,
+    Callback = function(Value)
+        Modules.Autofarm.farmSpeed = Value
+    end,
+})
+
+ConfigSection:CreateToggle({
+    Name = "Die on Full Bag",
+    Default = false,
+    Callback = function(Value)
+        Modules.Autofarm.dieOnFullBag = Value
+    end,
+})
+
+ConfigSection:CreateToggle({
+    Name = "Enable Protection",
+    Default = false,
+    Callback = function(Value)
+        Modules.Autofarm.protection = Value
+    end,
+})
+
+-- Keybind to toggle
+AddConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        Modules.Autofarm.enabled = not Modules.Autofarm.enabled
+        if Modules.Autofarm.enabled then
+            startAutofarm()
+        else
+            stopAutofarm()
         end
     end
-)
+end))
 
-local speedCard, speedOutline = makeCard("FarmSpeed", 174, 76)
-create("TextLabel", {
-    BackgroundTransparency = 1,
-    Font = Enum.Font.GothamBold,
-    Position = UDim2.fromOffset(32, 7),
-    Size = UDim2.fromOffset(170, 20),
-    Text = "Farm Speed",
-    TextColor3 = Theme.White,
-    TextSize = 14,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 14,
-}, speedCard)
-
-local speedLabel = create("TextLabel", {
-    AnchorPoint = Vector2.new(1, 0),
-    BackgroundTransparency = 1,
-    Font = Enum.Font.GothamBold,
-    Position = UDim2.new(1, -16, 0, 7),
-    RichText = true,
-    Size = UDim2.fromOffset(86, 20),
-    Text = string.format('%d <font color="#9FB8D3">/ 30</font>', state.farmSpeed),
-    TextColor3 = Theme.Gold,
-    TextSize = 13,
-    TextXAlignment = Enum.TextXAlignment.Right,
-    ZIndex = 14,
-}, speedCard)
-
-local slider = create("Frame", {
-    BackgroundColor3 = Theme.Dim,
-    BackgroundTransparency = 0.55,
-    BorderSizePixel = 0,
-    Position = UDim2.fromOffset(32, 55),
-    Size = UDim2.new(1, -64, 0, 6),
-    ZIndex = 14,
-}, speedCard)
-addCorner(slider, 99)
-
-local initialProgress = (state.farmSpeed - 20) / 10
-local sliderFill = create("Frame", {
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    BorderSizePixel = 0,
-    Size = UDim2.fromScale(initialProgress, 1),
-    ZIndex = 15,
-}, slider)
-addCorner(sliderFill, 99)
-
-local sliderKnob = create("Frame", {
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    BackgroundColor3 = Theme.White,
-    BorderSizePixel = 0,
-    Position = UDim2.new(initialProgress, 0, 0.5, 0),
-    Size = UDim2.fromOffset(17, 17),
-    ZIndex = 17,
-}, slider)
-addCorner(sliderKnob, 99)
-
-local sliderHitbox = create("TextButton", {
-    AutoButtonColor = false,
-    BackgroundTransparency = 1,
-    Position = UDim2.fromOffset(-8, -12),
-    Size = UDim2.new(1, 16, 1, 24),
-    Text = "",
-    ZIndex = 18,
-}, slider)
-
-local sliderDragging = false
-local function setSpeedTarget(screenX)
-    local width = slider.AbsoluteSize.X
-    if width <= 0 then return end
-    local progress = math.clamp((screenX - slider.AbsolutePosition.X) / width, 0, 1)
-    state.farmSpeed = math.floor(20 + progress * 10 + 0.5)
-    speedLabel.Text = string.format('%d <font color="#9FB8D3">/ 30</font>', state.farmSpeed)
-    sliderFill.Size = UDim2.fromScale(progress, 1)
-    sliderKnob.Position = UDim2.new(progress, 0, 0.5, 0)
-end
-
-connect(sliderHitbox.InputBegan, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        sliderDragging = true
-        setSpeedTarget(input.Position.X)
+-- Cleanup on window close
+AddConnection(Player.CharacterAdded:Connect(function(newCharacter)
+    if Modules.Autofarm.enabled then
+        Modules.Autofarm.farmPaused = true
+        Modules.Autofarm.pauseReason = "CHARACTER RESPAWN"
     end
-end)
+end))
 
-connect(UserInputService.InputChanged, function(input)
-    if sliderDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        setSpeedTarget(input.Position.X)
-    end
-end)
-
-connect(UserInputService.InputEnded, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        sliderDragging = false
-    end
-end)
-
-local setProtectionEnabled = makeToggleCard(
-    258,
-    "Anti Fling / Void",
-    "",
-    Theme.Aqua,
-    Theme.Blue,
-    function(enabled)
-        state.protection = enabled
-    end
-)
-
--- Stats Panel UI
-local statsPanel = create("Frame", {
-    Name = "FarmSummary",
-    AnchorPoint = Vector2.new(1, 0.5),
-    Active = true,
-    BackgroundColor3 = Theme.NavySoft,
-    BackgroundTransparency = 0.04,
-    BorderSizePixel = 0,
-    Position = UDim2.new(1, -16, 0.5, 0),
-    Size = UDim2.fromOffset(196, 202),
-    ZIndex = 40,
-}, screenGui)
-addCorner(statsPanel, 18)
-addStroke(statsPanel, Theme.OrangeNeon, 2, 0.08)
-
-local statsHeader = create("Frame", {
-    Name = "StatsHeader",
-    BackgroundTransparency = 1,
-    Position = UDim2.fromOffset(24, 8),
-    Size = UDim2.new(1, -32, 0, 42),
-    ZIndex = 43,
-}, statsPanel)
-
-create("TextLabel", {
-    BackgroundTransparency = 1,
-    Font = Enum.Font.GothamBold,
-    Size = UDim2.new(1, 0, 0, 24),
-    Text = "FARM STATS",
-    TextColor3 = Theme.White,
-    TextSize = 14,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 44,
-}, statsHeader)
-
-local statsStatus = create("TextLabel", {
-    BackgroundTransparency = 1,
-    Font = Enum.Font.GothamBold,
-    Position = UDim2.fromOffset(0, 22),
-    Size = UDim2.new(1, 0, 0, 14),
-    Text = "DISABLED",
-    TextColor3 = Theme.Dim,
-    TextSize = 9,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 44,
-}, statsHeader)
-
-local function makeStatRow(y, caption, initialValue, valueColor)
-    if y > 63 then
-        create("Frame", {
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BackgroundTransparency = 0.92,
-            BorderSizePixel = 0,
-            Position = UDim2.fromOffset(14, y - 4),
-            Size = UDim2.new(1, -28, 0, 1),
-            ZIndex = 42,
-        }, statsPanel)
-    end
-
-    local row = create("Frame", {
-        BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(14, y),
-        Size = UDim2.new(1, -28, 0, 26),
-        ZIndex = 43,
-    }, statsPanel)
-
-    create("TextLabel", {
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamMedium,
-        Position = UDim2.fromOffset(12, 0),
-        Size = UDim2.fromOffset(80, 26),
-        Text = caption,
-        TextColor3 = Theme.Muted,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 44,
-    }, row)
-
-    local valueLabel = create("TextLabel", {
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        Position = UDim2.new(1, -8, 0, 0),
-        Size = UDim2.fromOffset(70, 26),
-        Text = initialValue,
-        TextColor3 = valueColor or Theme.White,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Right,
-        ZIndex = 44,
-    }, row)
-
-    return valueLabel
-end
-
-local farmedStat = makeStatRow(65, "FARMED", "0", Theme.Gold)
-local bagStat = makeStatRow(95, "BAG", "0 / 40", Theme.Cyan)
-local speedStat = makeStatRow(125, "SPEED", "25", Theme.Aqua)
-local timeStat = makeStatRow(155, "TIME", "00:00", Theme.White)
-
-connect(RunService.Heartbeat, function()
-    if not state.alive then return end
-
-    if not state.autofarm then
-        statsStatus.Text = "DISABLED"
-        statsStatus.TextColor3 = Theme.Dim
-    elseif state.farmPaused then
-        statsStatus.Text = "PAUSED (" .. (state.pauseReason ~= "" and state.pauseReason or "WAITING") .. ")"
-        statsStatus.TextColor3 = Theme.Coral
-    else
-        statsStatus.Text = "FARMING..."
-        statsStatus.TextColor3 = Theme.Cyan
-    end
-
-    updateBagFromInterface()
-    killCharacterWhenBagIsFull()
-
-    farmedStat.Text = tostring(state.farmed)
-    bagStat.Text = string.format("%d / %d", state.bagCount, state.bagLimit)
-    speedStat.Text = tostring(state.farmSpeed)
-
-    local elapsed = math.floor(os.clock() - state.sessionStarted)
-    local mins = math.floor(elapsed / 60)
-    local secs = elapsed % 60
-    timeStat.Text = string.format("%02d:%02d", mins, secs)
-end)
+print("[OwnerHub + Autofarm] Script loaded successfully!")
+print("[OwnerHub + Autofarm] Press F to toggle autofarm, or use the UI")
