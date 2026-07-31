@@ -1,6 +1,6 @@
 --[[
-    MM2 Summer Autofarm - Full Original GUI + Upgraded Engine
-    (Fixed Spawn-Kill & Fixed Slider Scale)
+    MM2 Summer Autofarm & GUI Combined (112.lua)
+    Original GUI Concept & Code Integration
 ]]
 
 local Players = game:GetService("Players")
@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local VirtualUser = game:GetService("VirtualUser")
+local SoundService = game:GetService("SoundService")
 
 if not RunService:IsClient() then
     warn("[MM2 Summer GUI] Run this code from a LocalScript on the client.")
@@ -33,6 +34,7 @@ local MAX_FARM_DISTANCE = 180
 local fireTouch = (typeof(firetouchinterest) == "function" and firetouchinterest)
     or (typeof(firetouchtransmitter) == "function" and firetouchtransmitter)
     or nil
+
 local FLY_BELOW_OFFSET = fireTouch and 2.8 or 0.75
 local originalOcclusionMode = player.DevCameraOcclusionMode
 
@@ -41,16 +43,19 @@ local Theme = {
     NavySoft = Color3.fromRGB(10, 29, 65),
     Card = Color3.fromRGB(17, 39, 76),
     CardHover = Color3.fromRGB(24, 54, 94),
+
     OrangeNeon = Color3.fromRGB(255, 147, 45),
     OrangeSoft = Color3.fromRGB(255, 112, 35),
     OrangeBright = Color3.fromRGB(255, 190, 105),
     Red = Color3.fromRGB(255, 91, 104),
+
     Cyan = Color3.fromRGB(44, 226, 222),
     Aqua = Color3.fromRGB(45, 157, 222),
     Blue = Color3.fromRGB(57, 107, 238),
     Gold = Color3.fromRGB(255, 214, 99),
     Orange = Color3.fromRGB(255, 155, 88),
     Coral = Color3.fromRGB(255, 111, 120),
+
     White = Color3.fromRGB(244, 251, 255),
     Muted = Color3.fromRGB(159, 184, 211),
     Dim = Color3.fromRGB(76, 102, 137),
@@ -206,9 +211,7 @@ connect(screenGui.AncestryChanged, function(_, parent)
     end
 end)
 
-----------------------------------------------------
--- МОЩНЫЙ ДВИЖОК ПОИСКА И СБОРА МОНЕТ (ИЗ 2-ГО СКРИПТА)
-----------------------------------------------------
+-- Autofarm Data
 local coinBlacklist = {}
 local coinTouchFails = setmetatable({}, { __mode = "k" })
 local deadCoins = setmetatable({}, { __mode = "k" })
@@ -308,19 +311,27 @@ local function radarSweep(force)
     end
 end
 
-connect(workspace.ChildAdded, function()
+connect(workspace.ChildAdded, function(child)
     task.defer(radarSweep, true)
 end)
+
 radarSweep(true)
 
-local PICKUP_NAME_HINTS = { "coin", "candy", "token", "egg", "snow", "gift", "present", "pickup", "collect", "drop", "orb", "shell", "star", "gem" }
-local PARENT_NAME_HINTS = { "container", "coin", "drop", "pickup", "spawn", "collect" }
 local lastAutoDetect = 0
+local PICKUP_NAME_HINTS = {
+    "coin", "candy", "token", "egg", "snow", "gift", "present",
+    "pickup", "collect", "drop", "orb", "shell", "star", "gem",
+}
+local PARENT_NAME_HINTS = {
+    "container", "coin", "drop", "pickup", "spawn", "collect",
+}
 
 local function nameHasHint(name, hints)
     local lower = string.lower(name)
     for _, hint in ipairs(hints) do
-        if string.find(lower, hint, 1, true) then return true end
+        if string.find(lower, hint, 1, true) then
+            return true
+        end
     end
     return false
 end
@@ -333,7 +344,10 @@ local function autoDetectPickups()
     for _, mapCandidate in ipairs(workspace:GetChildren()) do
         if mapCandidate:IsA("Model") or mapCandidate:IsA("Folder") then
             for _, part in ipairs(mapCandidate:GetDescendants()) do
-                if part:IsA("BasePart") and part.Anchored and not part.CanCollide and part.Size.Magnitude <= 8 then
+                if part:IsA("BasePart")
+                    and part.Anchored
+                    and not part.CanCollide
+                    and part.Size.Magnitude <= 8 then
                     local byName = groups[part.Parent]
                     if not byName then
                         byName = {}
@@ -356,12 +370,17 @@ local function autoDetectPickups()
             if info.count >= 5 then
                 local sample = info.sample
                 local score = 0
-                if sample:FindFirstChildOfClass("TouchTransmitter") then score += 4 end
+                if sample:FindFirstChildOfClass("TouchTransmitter") then
+                    score += 4
+                end
                 if nameHasHint(name, PICKUP_NAME_HINTS) then score += 2 end
                 if nameHasHint(parent.Name, PARENT_NAME_HINTS) then score += 2 end
-                if sample:IsA("MeshPart") or sample:FindFirstChildOfClass("SpecialMesh") then score += 1 end
+                if sample:IsA("MeshPart") or sample:FindFirstChildOfClass("SpecialMesh") then
+                    score += 1
+                end
                 if info.count <= 80 then score += 1 end
-                if score >= 4 and (score > bestScore or (score == bestScore and info.count > bestCount)) then
+                if score >= 4 and (score > bestScore
+                    or (score == bestScore and info.count > bestCount)) then
                     bestParent, bestName, bestScore, bestCount = parent, name, score, info.count
                 end
             end
@@ -388,7 +407,9 @@ local function findClosestItem(rootPart)
     local now = os.clock()
 
     if now - lastPickTime < 0.15 then
-        if not lastPickHadResult then return nil, math.huge, math.huge end
+        if not lastPickHadResult then
+            return nil, math.huge, math.huge
+        end
         local cached = lastPickCoin
         if cached and cached.Parent and not coinBlacklist[cached] and not deadCoins[cached] then
             return cached, (cached.Position - rootPart.Position).Magnitude, lastPickScore
@@ -428,19 +449,25 @@ local function findClosestItem(rootPart)
         distances[index] = (position - rootPosition).Magnitude
         order[index] = index
     end
-    table.sort(order, function(a, b) return distances[a] < distances[b] end)
+    table.sort(order, function(a, b)
+        return distances[a] < distances[b]
+    end)
 
     local best, bestDistance, bestScore = nil, math.huge, math.huge
     local maxBonus = 6 * CLUSTER_BONUS
     for _, index in ipairs(order) do
         local distance = distances[index]
-        if distance - maxBonus >= bestScore then break end
+        if distance - maxBonus >= bestScore then
+            break
+        end
         local position = positions[index]
         local neighbors = 0
         for otherIndex = 1, count do
             if otherIndex ~= index and (positions[otherIndex] - position).Magnitude <= CLUSTER_RADIUS then
                 neighbors += 1
-                if neighbors >= 6 then break end
+                if neighbors >= 6 then
+                    break
+                end
             end
         end
         local score = distance - neighbors * CLUSTER_BONUS
@@ -473,7 +500,9 @@ local function isRoundOver()
 end
 
 farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
-    if not state.alive or not state.autofarm then
+    if not state.alive then return end
+
+    if not state.autofarm then
         state.farmPaused = false
         state.pauseReason = ""
         return
@@ -506,6 +535,7 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
 
     if not currentTarget or not currentTarget.Parent or coinBlacklist[currentTarget] then
         local candidate, candidateDistance = findClosestItem(rootPart)
+
         if candidate and candidateDistance <= MAX_FARM_DISTANCE then
             currentTarget = candidate
             state.farmPaused = false
@@ -514,7 +544,9 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
             currentTarget = nil
             state.farmPaused = true
             state.pauseReason = candidate and "TOO FAR" or "WAITING"
-            if not candidate then autoDetectPickups() end
+            if not candidate then
+                autoDetectPickups()
+            end
         end
     end
 
@@ -560,7 +592,9 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
     state.pauseReason = ""
 
     if player.DevCameraOcclusionMode ~= Enum.DevCameraOcclusionMode.Invisicam then
-        pcall(function() player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam end)
+        pcall(function()
+            player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+        end)
     end
 
     for _, part in ipairs(character:GetDescendants()) do
@@ -582,10 +616,13 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
             pcall(fireTouch, rootPart, target, 1)
         end
         coinBlacklist[target] = os.clock()
-        local bagFull = state.bagFound and state.bagLimit > 0 and state.bagCount >= state.bagLimit
+        local bagFull = state.bagFound and state.bagLimit > 0
+            and state.bagCount >= state.bagLimit
         if not bagFull then
             coinTouchFails[target] = (coinTouchFails[target] or 0) + 1
-            if coinTouchFails[target] >= 3 then deadCoins[target] = true end
+            if coinTouchFails[target] >= 3 then
+                deadCoins[target] = true
+            end
         end
         currentTarget = nil
         return
@@ -596,8 +633,8 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
     local safeDelta = math.min(deltaTime, 1 / 30)
     local step = math.min(state.farmSpeed * safeDelta, math.max(distance - 0.1, 0))
     local nextPosition = rootPart.Position + offset.Unit * step
-    local flatOffset = Vector3.new(offset.X, 0, offset.Z)
 
+    local flatOffset = Vector3.new(offset.X, 0, offset.Z)
     if flatOffset.Magnitude > 0.05 then
         rootPart.CFrame = CFrame.lookAt(nextPosition, nextPosition + flatOffset.Unit) * CFrame.Angles(-math.pi / 2, 0, 0)
     else
@@ -605,20 +642,23 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
     end
 end)
 
-----------------------------------------------------
--- ОБХОДЫ ANTI-FLING И ANTI-VOID (ИЗ 2-ГО СКРИПТА)
-----------------------------------------------------
+-- Anti Fling / Anti Void
 local lastSafePosition = nil
 local lastFramePosition = nil
 local safePosAccumulator = 0
 local voidThreshold = -440
 do
-    local ok, destroyHeight = pcall(function() return workspace.FallenPartsDestroyHeight end)
-    if ok and typeof(destroyHeight) == "number" then voidThreshold = destroyHeight + 80 end
+    local ok, destroyHeight = pcall(function()
+        return workspace.FallenPartsDestroyHeight
+    end)
+    if ok and typeof(destroyHeight) == "number" then
+        voidThreshold = destroyHeight + 80
+    end
 end
 
 connect(RunService.Heartbeat, function(deltaTime)
     if not state.alive or not state.protection then return end
+
     local character = player.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -629,7 +669,10 @@ connect(RunService.Heartbeat, function(deltaTime)
     local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
     local flingLimit = farmingActively and 300 or 120
 
-    if horizontalSpeed > flingLimit or velocity.Y > 150 or velocity.Y < -260 or rootPart.AssemblyAngularVelocity.Magnitude > 60 then
+    if horizontalSpeed > flingLimit
+        or velocity.Y > 150
+        or velocity.Y < -260
+        or rootPart.AssemblyAngularVelocity.Magnitude > 60 then
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
         if lastFramePosition then
@@ -643,7 +686,8 @@ connect(RunService.Heartbeat, function(deltaTime)
         safePosAccumulator = 0
     end
 
-    if rootPart.Position.Y < voidThreshold and lastSafePosition and not farmingActively then
+    local inVoid = rootPart.Position.Y < voidThreshold
+    if inVoid and lastSafePosition and not farmingActively then
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
         rootPart.CFrame = CFrame.new(lastSafePosition + Vector3.new(0, 3, 0))
@@ -652,13 +696,17 @@ connect(RunService.Heartbeat, function(deltaTime)
     safePosAccumulator += deltaTime
     if safePosAccumulator >= 0.5 then
         safePosAccumulator = 0
-        if not humanoid.PlatformStand and humanoid.FloorMaterial ~= Enum.Material.Air and rootPart.AssemblyLinearVelocity.Magnitude < 60 then
+        if not humanoid.PlatformStand
+            and humanoid.FloorMaterial ~= Enum.Material.Air
+            and rootPart.AssemblyLinearVelocity.Magnitude < 60 then
             lastSafePosition = rootPart.Position
         end
     end
+
     lastFramePosition = rootPart.Position
 end)
 
+-- Anti AFK
 connect(player.Idled, function()
     pcall(function()
         VirtualUser:CaptureController()
@@ -666,9 +714,7 @@ connect(player.Idled, function()
     end)
 end)
 
-----------------------------------------------------
--- ВЕРСТКА ТВОЕГО КРАСИВОГО СМАРТ-ИНТЕРФЕЙСА
-----------------------------------------------------
+-- UI Construction
 local holder = create("Frame", {
     Name = "Holder",
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -682,7 +728,8 @@ local statsScale = nil
 
 local function isPhoneScreen()
     local camera = workspace.CurrentCamera
-    return camera and UserInputService.TouchEnabled and camera.ViewportSize.Y <= 620
+    if not camera then return false end
+    return UserInputService.TouchEnabled and camera.ViewportSize.Y <= 620
 end
 
 local function updateScale()
@@ -696,14 +743,20 @@ local function updateScale()
         minScale = 0.4
     end
     responsiveScale.Scale = math.clamp(scale, minScale, 1)
+
     if statsScale then
-        statsScale.Scale = isPhoneScreen() and math.clamp((viewport.Y * 0.42) / 202, 0.55, 1) or 1
+        if isPhoneScreen() then
+            statsScale.Scale = math.clamp((viewport.Y * 0.42) / 202, 0.55, 1)
+        else
+            statsScale.Scale = 1
+        end
     end
 end
 
 local function clampWindow()
     local camera = workspace.CurrentCamera
     if not camera then return end
+
     local viewport = camera.ViewportSize
     local scale = responsiveScale.Scale
     local visibleHeight = (state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT) * scale
@@ -727,14 +780,15 @@ end
 local function bindCamera()
     if cameraConnection then cameraConnection:Disconnect() end
     local camera = workspace.CurrentCamera
-    if camera then cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshViewport) end
+    if camera then
+        cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshViewport)
+    end
     refreshViewport()
 end
 
 connect(workspace:GetPropertyChangedSignal("CurrentCamera"), bindCamera)
 bindCamera()
 
-local SoundService = game:GetService("SoundService")
 local function playUiSound(speed, volume)
     pcall(function()
         local sound = Instance.new("Sound")
@@ -752,14 +806,14 @@ local window = create("CanvasGroup", {
     BackgroundColor3 = Theme.Navy,
     BorderSizePixel = 0,
     ClipsDescendants = true,
-    GroupTransparency = 1,
+    GroupTransparency = 0,
     Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
     ZIndex = 1,
 }, holder)
 addCorner(window, 17)
 
 local windowStroke = addStroke(window, Theme.OrangeNeon, 2.5, 0)
-addGradient(windowStroke, {
+local borderGradient = addGradient(windowStroke, {
     { 0, Theme.OrangeBright },
     { 0.14, Theme.OrangeNeon },
     { 0.4, Theme.OrangeSoft },
@@ -797,6 +851,8 @@ create("TextLabel", {
     RichText = true,
     Text = '<font color="#2CE2DE">MM2 SUMMER</font> <font color="#FFD663">AUTOFARM</font>',
     TextSize = 14,
+    TextStrokeColor3 = Theme.Aqua,
+    TextStrokeTransparency = 0.48,
     TextXAlignment = Enum.TextXAlignment.Left,
     ZIndex = 22,
 }, header)
@@ -818,14 +874,41 @@ local function makeHeaderButton(name, text, offset, accent)
         ZIndex = 24,
     }, header)
     addCorner(button, 99)
-    addStroke(button, accent, 1, 0.48)
+    local outline = addStroke(button, accent, 1, 0.48)
 
-    connect(button.Activated, function() playUiSound(1.2, 0.7) end)
+    connect(button.MouseEnter, function()
+        smoothTween(button, 0.3, { BackgroundColor3 = accent, BackgroundTransparency = 0.14 })
+        smoothTween(outline, 0.3, { Transparency = 0.08 })
+    end)
+    connect(button.MouseLeave, function()
+        smoothTween(button, 0.35, {
+            BackgroundColor3 = Theme.Card,
+            BackgroundTransparency = 0.18,
+            Size = UDim2.fromOffset(36, 36),
+        })
+        smoothTween(outline, 0.35, { Transparency = 0.48 })
+    end)
+    connect(button.Activated, function()
+        playUiSound(1.2, 0.7)
+    end)
     return button
 end
 
 local closeButton = makeHeaderButton("Close", "×", 0, Theme.Coral)
 local minimizeButton = makeHeaderButton("Minimize", "—", -42, Theme.Cyan)
+
+connect(closeButton.Activated, function()
+    cleanup()
+    screenGui:Destroy()
+end)
+
+connect(minimizeButton.Activated, function()
+    state.minimized = not state.minimized
+    smoothTween(window, 0.3, {
+        Size = UDim2.fromOffset(WINDOW_WIDTH, state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT)
+    })
+    refreshViewport()
+end)
 
 local content = create("Frame", {
     Name = "Content",
@@ -848,11 +931,16 @@ local function makeCard(name, y, height)
     }, content)
     addCorner(card, 10)
     local outline = addStroke(card, Theme.Aqua, 1.5, 0.18)
+    addGradient(card, {
+        { 0, Color3.fromRGB(38, 111, 158) },
+        { 0.58, Color3.fromRGB(20, 65, 112) },
+        { 1, Color3.fromRGB(73, 49, 126) },
+    }, 10)
     return card, outline
 end
 
-local function makeToggleCard(y, title, colorA, colorB, callback)
-    local card = makeCard(title, y, 50)
+local function makeToggleCard(y, title, subtitle, colorA, colorB, callback)
+    local card, outline = makeCard(title, y, 50)
     local hitbox = create("TextButton", {
         AutoButtonColor = false,
         BackgroundTransparency = 1,
@@ -860,6 +948,26 @@ local function makeToggleCard(y, title, colorA, colorB, callback)
         Text = "",
         ZIndex = 18,
     }, card)
+
+    local icon = create("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Theme.NavySoft,
+        BackgroundTransparency = 0.12,
+        BorderSizePixel = 0,
+        Position = UDim2.new(1, -16, 0.5, 0),
+        Size = UDim2.fromOffset(28, 28),
+        ZIndex = 15,
+    }, card)
+    addCorner(icon, 12)
+    local iconCore = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = colorB,
+        BorderSizePixel = 0,
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(10, 10),
+        ZIndex = 14,
+    }, icon)
+    addCorner(iconCore, 99)
 
     create("TextLabel", {
         BackgroundTransparency = 1,
@@ -877,12 +985,11 @@ local function makeToggleCard(y, title, colorA, colorB, callback)
         AnchorPoint = Vector2.new(1, 0.5),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
-        Position = UDim2.new(1, -20, 0.5, 0),
+        Position = UDim2.new(1, -68, 0.5, 0),
         Size = UDim2.fromOffset(42, 18),
         Text = "OFF",
         TextColor3 = Theme.Dim,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Right,
+        TextSize = 9,
         ZIndex = 15,
     }, card)
 
@@ -891,6 +998,10 @@ local function makeToggleCard(y, title, colorA, colorB, callback)
         value = nextValue == true
         stateText.Text = value and "ON" or "OFF"
         stateText.TextColor3 = value and colorA or Theme.Dim
+        smoothTween(iconCore, 0.35, {
+            BackgroundColor3 = value and colorA or colorB,
+            Size = value and UDim2.fromOffset(15, 15) or UDim2.fromOffset(10, 10),
+        })
         callback(value)
     end
 
@@ -903,8 +1014,9 @@ local function makeToggleCard(y, title, colorA, colorB, callback)
 end
 
 local setAutofarmEnabled = makeToggleCard(
-    0,
+    58,
     "Auto Farm",
+    "",
     Theme.Cyan,
     Theme.Coral,
     function(enabled)
@@ -917,39 +1029,64 @@ local setAutofarmEnabled = makeToggleCard(
 )
 
 local bagKillTriggered = false
+local bagStartFarmed = state.farmed
 local trackedBagLabel = nil
 local lastBagScan = 0
 
 local function parseBagText(object)
-    if not (object:IsA("TextLabel") or object:IsA("TextButton")) then return nil end
+    if not (object:IsA("TextLabel") or object:IsA("TextButton")) then
+        return nil
+    end
+
     local text = object.Text or ""
     text = string.gsub(text, "<[^<>]->", "")
     text = string.gsub(text, ",", "")
     local currentText, capacityText = string.match(text, "^%s*(%d+)%s*/%s*(%d+)%s*$")
-    if currentText then return tonumber(currentText), tonumber(capacityText) end
+    if currentText then
+        return tonumber(currentText), tonumber(capacityText)
+    end
+
+    local plain = string.match(text, "^%s*(%d+)%s*$")
+    if plain then
+        return tonumber(plain), nil
+    end
+
     return nil
 end
 
 local function scanBagFromInterface()
     if trackedBagLabel and trackedBagLabel.Parent then
         local current, capacity = parseBagText(trackedBagLabel)
-        if current then return current, capacity end
+        if current then
+            return current, capacity
+        end
     end
     trackedBagLabel = nil
 
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then return nil end
 
-    if os.clock() - lastBagScan < 1.5 then return nil end
-    lastBagScan = os.clock()
-
-    for _, object in ipairs(playerGui:GetDescendants()) do
-        local current, capacity = parseBagText(object)
-        if current and object.Visible then
-            trackedBagLabel = object
-            return current, capacity
+    local mainGui = playerGui:FindFirstChild("MainGUI")
+    local gameFrame = mainGui and mainGui:FindFirstChild("Game")
+    local coinBags = gameFrame and gameFrame:FindFirstChild("CoinBags")
+    local container = coinBags and coinBags:FindFirstChild("Container")
+    if container then
+        for _, bag in ipairs(container:GetChildren()) do
+            if bag:IsA("GuiObject") then
+                local currencyFrame = bag:FindFirstChild("CurrencyFrame")
+                local icon = currencyFrame and currencyFrame:FindFirstChild("Icon")
+                local label = icon and icon:FindFirstChild("Coins") or bag:FindFirstChild("Coins", true)
+                if label and label:IsA("TextLabel") then
+                    local current, capacity = parseBagText(label)
+                    if current then
+                        trackedBagLabel = label
+                        return current, capacity
+                    end
+                end
+            end
         end
     end
+
     return nil
 end
 
@@ -968,6 +1105,7 @@ local function updateBagFromInterface()
         end
     else
         state.bagFound = false
+        state.bagCount = math.max(0, state.farmed - bagStartFarmed)
     end
 end
 
@@ -980,24 +1118,9 @@ task.spawn(function()
     end
 end)
 
-local setDieOnFullBagEnabled = makeToggleCard(
-    58,
-    "Auto Respawn",
-    Theme.Coral,
-    Theme.Gold,
-    function(enabled)
-        state.dieOnFullBag = enabled
-        bagKillTriggered = false
-    end
-)
-
-----------------------------------------------------
--- ИСПРАВЛЕННЫЙ RESPAWN (НЕ УБИВАЕТ НА СПАВНЕ И В ЛОББИ)
-----------------------------------------------------
 local function killCharacterWhenBagIsFull()
     if bagKillTriggered or not state.dieOnFullBag then return end
-    -- ИСКЛЮЧЕНИЕ: Убивать строго в игре, только когда сумка найдена и действительно полна
-    if not state.bagFound or state.bagCount < state.bagLimit or isRoundOver() then return end
+    if state.bagCount < state.bagLimit then return end
 
     bagKillTriggered = true
     currentTarget = nil
@@ -1018,10 +1141,22 @@ local function killCharacterWhenBagIsFull()
     end
 end
 
-----------------------------------------------------
--- ИСПРАВЛЕННЫЙ ПОЛЗУНОК СКОРОСТИ (ПОД UISCALE)
-----------------------------------------------------
-local speedCard = makeCard("FarmSpeed", 116, 76)
+local setDieOnFullBagEnabled = makeToggleCard(
+    116,
+    "Auto Respawn",
+    "",
+    Theme.Coral,
+    Theme.Gold,
+    function(enabled)
+        state.dieOnFullBag = enabled
+        bagKillTriggered = false
+        if enabled then
+            bagStartFarmed = state.farmed
+        end
+    end
+)
+
+local speedCard, speedOutline = makeCard("FarmSpeed", 174, 76)
 create("TextLabel", {
     BackgroundTransparency = 1,
     Font = Enum.Font.GothamBold,
@@ -1060,7 +1195,7 @@ addCorner(slider, 99)
 
 local initialProgress = (state.farmSpeed - 20) / 10
 local sliderFill = create("Frame", {
-    BackgroundColor3 = Theme.Cyan,
+    BackgroundColor3 = Color3.new(1, 1, 1),
     BorderSizePixel = 0,
     Size = UDim2.fromScale(initialProgress, 1),
     ZIndex = 15,
@@ -1087,19 +1222,14 @@ local sliderHitbox = create("TextButton", {
 }, slider)
 
 local sliderDragging = false
-
 local function setSpeedTarget(screenX)
-    local absPos = slider.AbsolutePosition.X
-    local absSize = slider.AbsoluteSize.X
-    if absSize <= 0 then return end
-    
-    local relX = (screenX - absPos) / absSize
-    local targetProgress = math.clamp(relX, 0, 1)
-    
-    state.farmSpeed = math.floor(20 + targetProgress * 10 + 0.5)
+    local width = slider.AbsoluteSize.X
+    if width <= 0 then return end
+    local progress = math.clamp((screenX - slider.AbsolutePosition.X) / width, 0, 1)
+    state.farmSpeed = math.floor(20 + progress * 10 + 0.5)
     speedLabel.Text = string.format('%d <font color="#9FB8D3">/ 30</font>', state.farmSpeed)
-    sliderFill.Size = UDim2.fromScale(targetProgress, 1)
-    sliderKnob.Position = UDim2.new(targetProgress, 0, 0.5, 0)
+    sliderFill.Size = UDim2.fromScale(progress, 1)
+    sliderKnob.Position = UDim2.new(progress, 0, 0.5, 0)
 end
 
 connect(sliderHitbox.InputBegan, function(input)
@@ -1122,8 +1252,9 @@ connect(UserInputService.InputEnded, function(input)
 end)
 
 local setProtectionEnabled = makeToggleCard(
-    200,
+    258,
     "Anti Fling / Void",
+    "",
     Theme.Aqua,
     Theme.Blue,
     function(enabled)
@@ -1131,95 +1262,127 @@ local setProtectionEnabled = makeToggleCard(
     end
 )
 
-----------------------------------------------------
--- ОКОШКО СТАТИСТИКИ С ФАРМОМ И ТАЙМЕРОМ
-----------------------------------------------------
+-- Stats Panel UI
 local statsPanel = create("Frame", {
     Name = "FarmSummary",
     AnchorPoint = Vector2.new(1, 0.5),
     Active = true,
     BackgroundColor3 = Theme.NavySoft,
+    BackgroundTransparency = 0.04,
     BorderSizePixel = 0,
     Position = UDim2.new(1, -16, 0.5, 0),
     Size = UDim2.fromOffset(196, 202),
     ZIndex = 40,
 }, screenGui)
 addCorner(statsPanel, 18)
-statsScale = create("UIScale", { Scale = 1 }, statsPanel)
+addStroke(statsPanel, Theme.OrangeNeon, 2, 0.08)
+
+local statsHeader = create("Frame", {
+    Name = "StatsHeader",
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(24, 8),
+    Size = UDim2.new(1, -32, 0, 42),
+    ZIndex = 43,
+}, statsPanel)
+
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Size = UDim2.new(1, 0, 0, 24),
+    Text = "FARM STATS",
+    TextColor3 = Theme.White,
+    TextSize = 14,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 44,
+}, statsHeader)
+
+local statsStatus = create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Position = UDim2.fromOffset(0, 22),
+    Size = UDim2.new(1, 0, 0, 14),
+    Text = "DISABLED",
+    TextColor3 = Theme.Dim,
+    TextSize = 9,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 44,
+}, statsHeader)
 
 local function makeStatRow(y, caption, initialValue, valueColor)
+    if y > 63 then
+        create("Frame", {
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BackgroundTransparency = 0.92,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(14, y - 4),
+            Size = UDim2.new(1, -28, 0, 1),
+            ZIndex = 42,
+        }, statsPanel)
+    end
+
+    local row = create("Frame", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(14, y),
+        Size = UDim2.new(1, -28, 0, 26),
+        ZIndex = 43,
+    }, statsPanel)
+
     create("TextLabel", {
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamMedium,
-        Position = UDim2.fromOffset(16, y),
-        Size = UDim2.fromOffset(92, 22),
+        Position = UDim2.fromOffset(12, 0),
+        Size = UDim2.fromOffset(80, 26),
         Text = caption,
         TextColor3 = Theme.Muted,
         TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 43,
-    }, statsPanel)
+        ZIndex = 44,
+    }, row)
 
-    return create("TextLabel", {
+    local valueLabel = create("TextLabel", {
         AnchorPoint = Vector2.new(1, 0),
         BackgroundTransparency = 1,
         Font = Enum.Font.GothamBold,
-        Position = UDim2.new(1, -16, 0, y),
-        Size = UDim2.fromOffset(74, 22),
+        Position = UDim2.new(1, -8, 0, 0),
+        Size = UDim2.fromOffset(70, 26),
         Text = initialValue,
-        TextColor3 = valueColor,
+        TextColor3 = valueColor or Theme.White,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Right,
-        ZIndex = 43,
-    }, statsPanel)
+        ZIndex = 44,
+    }, row)
+
+    return valueLabel
 end
 
-local farmedStat = makeStatRow(20, "Collected", "0", Theme.Gold)
-local timeStat = makeStatRow(50, "Session", "00:00", Theme.Cyan)
-local rateStat = makeStatRow(80, "Per Hour", "0", Theme.Coral)
-local speedStat = makeStatRow(110, "Speed", tostring(state.farmSpeed), Theme.White)
-local bagStat = makeStatRow(140, "Bag", "0/" .. tostring(state.bagLimit), Theme.OrangeBright)
+local farmedStat = makeStatRow(65, "FARMED", "0", Theme.Gold)
+local bagStat = makeStatRow(95, "BAG", "0 / 40", Theme.Cyan)
+local speedStat = makeStatRow(125, "SPEED", "25", Theme.Aqua)
+local timeStat = makeStatRow(155, "TIME", "00:00", Theme.White)
 
-connect(closeButton.Activated, function()
-    if state.closing then return end
-    state.closing = true
-    state.autofarm = false
-    restoreCharacter()
-    cleanup()
-    if screenGui.Parent then screenGui:Destroy() end
-end)
-
-connect(minimizeButton.Activated, function()
-    state.minimized = not state.minimized
-    content.Visible = not state.minimized
-    window.Size = UDim2.fromOffset(WINDOW_WIDTH, state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT)
-end)
-
-----------------------------------------------------
--- ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ
-----------------------------------------------------
-local statsAccumulator = 0
-connect(RunService.RenderStepped, function(deltaTime)
+connect(RunService.Heartbeat, function()
     if not state.alive then return end
-    statsAccumulator += deltaTime
 
-    if statsAccumulator >= 0.2 then
-        statsAccumulator = 0
-        local sessionSeconds = math.max(0, os.clock() - state.sessionStarted)
-        local wholeSeconds = math.floor(sessionSeconds)
-        local minutes = math.floor(wholeSeconds / 60)
-        local seconds = wholeSeconds % 60
-        local perHour = sessionSeconds > 0 and (state.farmed / sessionSeconds) * 3600 or 0
-
-        farmedStat.Text = tostring(state.farmed)
-        timeStat.Text = string.format("%02d:%02d", minutes, seconds)
-        rateStat.Text = string.format("%.0f", perHour)
-        speedStat.Text = tostring(state.farmSpeed)
-        updateBagFromInterface()
-        bagStat.Text = string.format("%d/%d", state.bagCount, state.bagLimit)
-        
-        killCharacterWhenBagIsFull()
+    if not state.autofarm then
+        statsStatus.Text = "DISABLED"
+        statsStatus.TextColor3 = Theme.Dim
+    elseif state.farmPaused then
+        statsStatus.Text = "PAUSED (" .. (state.pauseReason ~= "" and state.pauseReason or "WAITING") .. ")"
+        statsStatus.TextColor3 = Theme.Coral
+    else
+        statsStatus.Text = "FARMING..."
+        statsStatus.TextColor3 = Theme.Cyan
     end
-end)
 
-smoothTween(window, 0.48, { GroupTransparency = 0 })
+    updateBagFromInterface()
+    killCharacterWhenBagIsFull()
+
+    farmedStat.Text = tostring(state.farmed)
+    bagStat.Text = string.format("%d / %d", state.bagCount, state.bagLimit)
+    speedStat.Text = tostring(state.farmSpeed)
+
+    local elapsed = math.floor(os.clock() - state.sessionStarted)
+    local mins = math.floor(elapsed / 60)
+    local secs = elapsed % 60
+    timeStat.Text = string.format("%02d:%02d", mins, secs)
+end)
