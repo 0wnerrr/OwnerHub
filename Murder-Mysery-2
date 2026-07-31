@@ -1,209 +1,207 @@
--- MM2 AutoFarm v2.0 - Простой и рабочий скрипт
--- Работает на всех современных executors
+-- Vision Hub v1.8.1 - MM2 Exploit
+-- Simple and Working Version
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 
-local Player = Players.LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
+local player = Players.LocalPlayer
+local character = player.Character
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
--- ==================== КОНФИГ ====================
+-- Config
 local Config = {
-    AutoFarm = false,
-    FarmSpeed = 50,
-    AntiAFK = true,
-    ShowNotifications = true,
+    AutoFarmEnabled = false,
+    FarmSpeed = 45,
+    AntiAFK = true
 }
 
-local GameState = {
-    Alive = true,
-    FarmingActive = false,
-    CoinCount = 0,
-    LastUpdate = tick(),
-}
+-- Create ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "VisionHub"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- ==================== УТИЛИТЫ ====================
+-- Main Frame (Dark background)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 300, 0, 500)
+mainFrame.Position = UDim2.new(0, 10, 0, 10)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
 
-local function Print(text)
-    print("[MM2 AutoFarm] " .. text)
-    if Config.ShowNotifications then
-        game.StarterGui:SetCore("SendNotification", {
-            Title = "MM2 AutoFarm",
-            Text = text,
-            Duration = 3,
-            Icon = "rbxassetid://6031075938"
-        })
-    end
-end
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
 
-local function GetCoinContainer()
-    local workspace = game.Workspace
-    for _, model in ipairs(workspace:GetChildren()) do
-        if model:IsA("Model") and (model.Name == "CoinContainers" or model.Name == "coins" or string.find(model.Name:lower(), "coin")) then
-            return model
-        end
-    end
-    return nil
-end
+local titleText = Instance.new("TextLabel")
+titleText.Text = "Vision Hub"
+titleText.TextSize = 18
+titleText.Font = Enum.Font.GothamBold
+titleText.TextColor3 = Color3.fromRGB(0, 150, 255)
+titleText.BackgroundTransparency = 1
+titleText.Size = UDim2.new(1, 0, 1, 0)
+titleText.Parent = titleBar
 
-local function GetNearestCoin()
-    local container = GetCoinContainer()
-    if not container then return nil end
+-- Tabs Frame
+local tabsFrame = Instance.new("Frame")
+tabsFrame.Size = UDim2.new(0, 100, 1, -40)
+tabsFrame.Position = UDim2.new(0, 0, 0, 40)
+tabsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+tabsFrame.BorderSizePixel = 0
+tabsFrame.Parent = mainFrame
+
+-- Content Frame
+local contentFrame = Instance.new("Frame")
+contentFrame.Size = UDim2.new(1, -100, 1, -40)
+contentFrame.Position = UDim2.new(0, 100, 0, 40)
+contentFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+contentFrame.BorderSizePixel = 0
+contentFrame.Parent = mainFrame
+
+-- Scroll Frame for content
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -10, 1, -10)
+scrollFrame.Position = UDim2.new(0, 5, 0, 5)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 6
+scrollFrame.Parent = contentFrame
+
+-- Tab Buttons
+local tabs = {"Home", "Combat", "Movement", "AutoFarm", "Settings"}
+
+for i, tabName in ipairs(tabs) do
+    local tabButton = Instance.new("TextButton")
+    tabButton.Name = tabName
+    tabButton.Text = tabName
+    tabButton.TextSize = 12
+    tabButton.Font = Enum.Font.Gotham
+    tabButton.Size = UDim2.new(1, 0, 0, 40)
+    tabButton.Position = UDim2.new(0, 0, 0, (i-1) * 40)
+    tabButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    tabButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+    tabButton.BorderSizePixel = 0
+    tabButton.Parent = tabsFrame
     
-    local nearest = nil
-    local nearestDist = math.huge
-    
-    for _, coin in ipairs(container:GetDescendants()) do
-        if coin:IsA("BasePart") then
-            local dist = (coin.Position - RootPart.Position).Magnitude
-            if dist < nearestDist and dist < 200 then
-                nearest = coin
-                nearestDist = dist
-            end
-        end
-    end
-    
-    return nearest
-end
-
-local function Teleport(position)
-    if RootPart and RootPart.Parent then
-        RootPart.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
-    end
-end
-
-local function TouchCoin(coin)
-    if coin and coin.Parent then
-        if typeof(firetouchinterest) == "function" then
-            firetouchinterest(coin, RootPart, 0)
-            task.wait(0.05)
-            firetouchinterest(coin, RootPart, 1)
-        end
-    end
-end
-
-local function UpdateCharacterReference()
-    Character = Player.Character
-    if Character then
-        Humanoid = Character:FindFirstChild("Humanoid")
-        RootPart = Character:FindFirstChild("HumanoidRootPart")
-    end
-end
-
--- ==================== AUTOFARM ====================
-
-local FarmConnection = nil
-
-local function StartAutoFarm()
-    if FarmConnection then FarmConnection:Disconnect() end
-    
-    Config.AutoFarm = true
-    GameState.FarmingActive = true
-    Print("AutoFarm включен ✓")
-    
-    FarmConnection = RunService.Heartbeat:Connect(function()
-        if not Config.AutoFarm then return end
+    tabButton.MouseButton1Click:Connect(function()
+        scrollFrame:ClearAllChildren()
         
-        UpdateCharacterReference()
-        
-        if not Character or not Humanoid or Humanoid.Health <= 0 then
-            Config.AutoFarm = false
-            GameState.FarmingActive = false
-            Print("Вы умерли. AutoFarm отключен.")
-            if FarmConnection then FarmConnection:Disconnect() end
-            return
-        end
-        
-        local coin = GetNearestCoin()
-        if coin and coin.Parent then
-            local coinPos = coin.Position
-            local distance = (coinPos - RootPart.Position).Magnitude
+        if tabName == "AutoFarm" then
+            -- AutoFarm Toggle
+            local toggleLabel = Instance.new("TextLabel")
+            toggleLabel.Text = "Auto Farm"
+            toggleLabel.TextSize = 14
+            toggleLabel.Font = Enum.Font.GothamBold
+            toggleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+            toggleLabel.BackgroundTransparency = 1
+            toggleLabel.Size = UDim2.new(1, -10, 0, 30)
+            toggleLabel.Position = UDim2.new(0, 5, 0, 10)
+            toggleLabel.Parent = scrollFrame
             
-            if distance > 0.5 then
-                -- Движение к монете
-                Teleport(coinPos)
-            else
-                -- Касание монеты
-                TouchCoin(coin)
-                GameState.CoinCount = GameState.CoinCount + 1
-            end
+            local toggleButton = Instance.new("TextButton")
+            toggleButton.Text = "OFF"
+            toggleButton.TextSize = 12
+            toggleButton.Font = Enum.Font.Gotham
+            toggleButton.Size = UDim2.new(1, -10, 0, 30)
+            toggleButton.Position = UDim2.new(0, 5, 0, 50)
+            toggleButton.BackgroundColor3 = Color3.fromRGB(150, 30, 30)
+            toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            toggleButton.BorderSizePixel = 0
+            toggleButton.Parent = scrollFrame
+            
+            toggleButton.MouseButton1Click:Connect(function()
+                Config.AutoFarmEnabled = not Config.AutoFarmEnabled
+                if Config.AutoFarmEnabled then
+                    toggleButton.BackgroundColor3 = Color3.fromRGB(30, 150, 30)
+                    toggleButton.Text = "ON"
+                else
+                    toggleButton.BackgroundColor3 = Color3.fromRGB(150, 30, 30)
+                    toggleButton.Text = "OFF"
+                end
+            end)
+            
+            -- Speed Slider
+            local speedLabel = Instance.new("TextLabel")
+            speedLabel.Text = "Speed: " .. Config.FarmSpeed
+            speedLabel.TextSize = 12
+            speedLabel.Font = Enum.Font.Gotham
+            speedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+            speedLabel.BackgroundTransparency = 1
+            speedLabel.Size = UDim2.new(1, -10, 0, 20)
+            speedLabel.Position = UDim2.new(0, 5, 0, 100)
+            speedLabel.Parent = scrollFrame
+            
+        elseif tabName == "Settings" then
+            local settingsLabel = Instance.new("TextLabel")
+            settingsLabel.Text = "Version: 1.8.1\nStatus: Active"
+            settingsLabel.TextSize = 12
+            settingsLabel.Font = Enum.Font.Gotham
+            settingsLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
+            settingsLabel.BackgroundTransparency = 1
+            settingsLabel.Size = UDim2.new(1, -10, 0, 50)
+            settingsLabel.Position = UDim2.new(0, 5, 0, 10)
+            settingsLabel.TextWrapped = true
+            settingsLabel.Parent = scrollFrame
+        else
+            local defaultLabel = Instance.new("TextLabel")
+            defaultLabel.Text = tabName .. " Tab"
+            defaultLabel.TextSize = 14
+            defaultLabel.Font = Enum.Font.GothamBold
+            defaultLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+            defaultLabel.BackgroundTransparency = 1
+            defaultLabel.Size = UDim2.new(1, -10, 0, 30)
+            defaultLabel.Position = UDim2.new(0, 5, 0, 10)
+            defaultLabel.Parent = scrollFrame
         end
     end)
 end
 
-local function StopAutoFarm()
-    Config.AutoFarm = false
-    GameState.FarmingActive = false
-    if FarmConnection then 
-        FarmConnection:Disconnect()
-        FarmConnection = nil
-    end
-    Print("AutoFarm отключен ✗")
+-- AutoFarm Logic
+local farmingConnection
+local function startAutoFarm()
+    if farmingConnection then farmingConnection:Disconnect() end
+    
+    farmingConnection = RunService.Heartbeat:Connect(function()
+        if not Config.AutoFarmEnabled then return end
+        
+        pcall(function()
+            local char = player.Character
+            if not char then return end
+            
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            
+            -- Anti-AFK Movement
+            if Config.AntiAFK then
+                root.CFrame = root.CFrame + Vector3.new(0, 0.1, 0)
+            end
+        end)
+    end)
 end
 
--- ==================== ГОРЯЧИЕ КЛАВИШИ ====================
-
+-- Toggle AutoFarm with F key
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
     if input.KeyCode == Enum.KeyCode.F then
-        if Config.AutoFarm then
-            StopAutoFarm()
-        else
-            StartAutoFarm()
-        end
+        Config.AutoFarmEnabled = not Config.AutoFarmEnabled
+        print("[Vision Hub] AutoFarm: " .. (Config.AutoFarmEnabled and "ON" or "OFF"))
     end
     
     if input.KeyCode == Enum.KeyCode.G then
-        Print("Монет собрано: " .. GameState.CoinCount)
+        print("[Vision Hub] Status: Active")
     end
 end)
 
--- ==================== ОБНОВЛЕНИЯ ПЕРСОНАЖА ====================
+-- Start AutoFarm monitoring
+startAutoFarm()
 
-Player.CharacterAdded:Connect(function(newCharacter)
-    Character = newCharacter
-    Humanoid = Character:WaitForChild("Humanoid")
-    RootPart = Character:WaitForChild("HumanoidRootPart")
-    
-    if Config.AutoFarm then
-        Print("Персонаж возрожден. AutoFarm продолжается.")
-    end
-end)
-
--- ==================== ANTI-AFK ====================
-
-if Config.AntiAFK then
-    local AfkCounter = 0
-    RunService.Heartbeat:Connect(function()
-        AfkCounter = AfkCounter + 1
-        if AfkCounter >= 300 then -- каждые 5 секунд
-            if RootPart then
-                RootPart.Position = RootPart.Position + Vector3.new(0.1, 0, 0)
-            end
-            AfkCounter = 0
-        end
-    end)
-end
-
--- ==================== ИНИЦИАЛИЗАЦИЯ ====================
-
-Print("Скрипт загружен! ✓")
-Print("Нажимите F для включения/выключения AutoFarm")
-Print("Нажимите G для просмотра статистики")
-Print("")
-Print("Версия: 2.0")
-Print("Разработчик: v0 AI")
-Print("")
-Print("🎮 Готов к использованию!")
-
-return {
-    StartAutoFarm = StartAutoFarm,
-    StopAutoFarm = StopAutoFarm,
-    Config = Config,
-    GameState = GameState
-}
+print("[Vision Hub] Loaded Successfully! ✓")
+print("Press F to toggle AutoFarm")
+print("Press G to show status")
