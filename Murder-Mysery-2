@@ -23,7 +23,7 @@ end
 getgenv().OwnerHub_Connections = {}
 
 for _, gui in ipairs(CoreGui:GetChildren()) do
-    if gui.Name == "OwnerHub" or gui.Name == "VisionESP" or string.match(gui.Name, "^OwnerBtn_") or gui.Name == "OwnerTimerGUI" then
+    if gui.Name == "OwnerHub" or gui.Name == "VisionESP" or string.match(gui.Name, "^OwnerBtn_") or gui.Name == "OwnerTimerGUI" or gui.Name == "OwnerStarsBG" then
         gui:Destroy()
     end
 end
@@ -127,6 +127,7 @@ Modules.Config = {
     NotifyMurderer = false,
     NotifySheriff = false,
     NotifyGunDropped = false,
+    AutoFarmCoins = false,
 
     ButtonsLocked = false
 }
@@ -350,6 +351,46 @@ function getCoinContainer()
     local map = getMap()
     if map then return map:FindFirstChild("CoinContainer") end
     return nil
+end
+
+-- АВТОФАРМ МОНЕТ (MM2)
+do
+    local autofarmTask = nil
+
+    function Modules.ToggleAutoFarmCoins(enable)
+        Modules.Config.AutoFarmCoins = enable
+
+        if autofarmTask then
+            task.cancel(autofarmTask)
+            autofarmTask = nil
+        end
+
+        if not enable then return end
+
+        autofarmTask = task.spawn(function()
+            while Modules.Config.AutoFarmCoins do
+                pcall(function()
+                    local container = getCoinContainer()
+                    local root = Modules.RootPart
+                    if container and root and root.Parent then
+                        for _, coin in ipairs(container:GetChildren()) do
+                            if not Modules.Config.AutoFarmCoins then break end
+                            local cPart = coin:FindFirstChild("CoinVisual") or coin:FindFirstChild("BasePart") or coin:FindFirstChildWhichIsA("BasePart")
+                            if cPart and cPart:IsA("BasePart") then
+                                root.CFrame = cPart.CFrame + Vector3.new(0, 2, 0)
+                                if firetouchinterest then
+                                    firetouchinterest(cPart, root, 0)
+                                    firetouchinterest(cPart, root, 1)
+                                end
+                                task.wait(0.2)
+                            end
+                        end
+                    end
+                end)
+                task.wait(0.5)
+            end
+        end)
+    end
 end
 
 function Modules.GetPlayerByName(name)
@@ -1515,7 +1556,7 @@ local Window = WindUI:CreateWindow({
     Icon = "https://raw.githubusercontent.com/orialdev2/Vision-Hub/refs/heads/main/Vision_Logo1.png",
     IconSize = 50,
     NewElements = true,
-    BackgroundImage = "rbxassetid://0", -- Замени ID на свою картинку для фона при желании
+    BackgroundImage = "rbxassetid://0",
     OpenButton = {
         Title = "OwnerHub",
         CornerRadius = UDim.new(1, 0),
@@ -1529,6 +1570,54 @@ local Window = WindUI:CreateWindow({
         )
     }
 })
+
+-- Создаем фоновый слой со звездами и бликами для красоты
+task.spawn(function()
+    pcall(function()
+        local starsGui = Instance.new("ScreenGui")
+        starsGui.Name = "OwnerStarsBG"
+        starsGui.IgnoreGuiInset = true
+        starsGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        starsGui.Parent = CoreGui
+
+        -- Случайные мерцающие звезды
+        for i = 1, 45 do
+            local star = Instance.new("Frame")
+            star.Size = UDim2.fromOffset(math.random(2, 4), math.random(2, 4))
+            star.Position = UDim2.fromScale(math.random(), math.random())
+            star.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            star.BackgroundTransparency = math.random(20, 70) / 100
+            star.BorderSizePixel = 0
+            star.Parent = starsGui
+
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = star
+
+            task.spawn(function()
+                while star and star.Parent do
+                    TS = game:GetService("TweenService")
+                    local info = TweenInfo.new(math.random(1, 3), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+                    TS:Create(star, info, {BackgroundTransparency = math.random(80, 95) / 100}):Play()
+                    task.wait(math.random(2, 4))
+                end
+            end)
+        end
+
+        -- Мягкие светящиеся неоновые блики на фоне
+        for i = 1, 3 do
+            local glow = Instance.new("ImageLabel")
+            glow.Size = UDim2.fromOffset(math.random(300, 500), math.random(300, 500))
+            glow.Position = UDim2.fromScale(math.random(), math.random())
+            glow.AnchorPoint = Vector2.new(0.5, 0.5)
+            glow.BackgroundTransparency = 1
+            glow.Image = "rbxassetid://6014261993" -- Мягкий световой градиент
+            glow.ImageColor3 = i == 1 and Color3.fromHex("#555555") or (i == 2 and Color3.fromHex("#333333") or Color3.fromHex("#222222"))
+            glow.ImageTransparency = 0.85
+            glow.Parent = starsGui
+        end
+    end)
+end)
 
 Window.ConfigManager:CreateConfig("Default")
 
@@ -1587,12 +1676,12 @@ Main:Paragraph({
 Main:Space()
 
 Main:Code({
-    Title = "Changelog 1.8.0",
+    Title = "Changelog 1.8.1",
     Code = [[
 [OwnerHub]
-+ 1.8.0 released!
-+ Fully rewritten codebase and rebranded to OwnerHub
-+ Fixed several bugs and stability issues
++ Added functional Auto Farm Coins tab
++ Added animated star background and soft ambient glows
++ Fully optimized and stabilized performance
     ]]
 })
 
@@ -2683,13 +2772,17 @@ do
         Title = "Farming",
         Desc = "Automate gameplay for rewards",
         Icon = "dollar-sign",
-        TextXAlignment = "Center"
+        TextXAlignment = "Center",
+        Opened = true,
     })
 
-    FarmingSection:Label({
-        Title = "Are you doing here?",
-        Desc = "Farming features are not yet implemented.",
-        Icon = "alert-circle",
+    FarmingSection:Toggle({
+        Title = "Auto Farm Coins",
+        Desc = "Automatically teleports to collect coins on the map",
+        Flag = "AutoFarmCoinsToggle",
+        Callback = function(state)
+            Modules.ToggleAutoFarmCoins(state)
+        end
     })
 end
 
