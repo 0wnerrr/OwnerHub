@@ -1,3103 +1,2405 @@
--- This file was generated at discord.gg/syncrypt
+--[[
+    MM2 Autofarm GUI
+    Original concept: skobliko
 
-local t1 = {}
-t1[1] = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-task.spawn(function()
-    pcall(function(...)
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/n9owns/Files/refs/heads/main/antiafk", true))()
-    end)
-end)
-t1[2] = game:GetService("Players")
+    Use as a LocalScript in a Roblox experience you own or are authorized to test.
+]]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-t1[3] = game:GetService("ReplicatedStorage")
-local _ = game:GetService("Workspace").CurrentCamera
-t1[4] = t1[2].LocalPlayer
-game:GetService("CoreGui")
-t1[5] = game:GetService("TweenService")
-local color3 = Color3.fromHex("#FF6B1A")
-local color3_2 = Color3.fromHex("#FF4500")
-local color3_3 = Color3.fromHex("#9D4EDD")
-local color3_4 = Color3.fromHex("#5A189A")
-local color3_5 = Color3.fromHex("#8B0000")
-local color3_6 = Color3.fromHex("#E0E0E0")
-local color3_7 = Color3.fromHex("#FF7518")
-local color3_8 = Color3.fromHex("#6B2E8A")
-local color3_9 = Color3.fromHex("#0D0221")
-local color3_10 = Color3.fromHex("#39FF14")
-t1[6] = {
-	Orange = color3,
-	DarkOrange = color3_2,
-	Purple = color3_3,
-	DarkPurple = color3_4,
-	Blood = color3_5,
-	Ghost = color3_6,
-	Pumpkin = color3_7,
-	Witch = color3_8,
-	Midnight = color3_9,
-	Toxic = color3_10
+local MarketplaceService = game:GetService("MarketplaceService")
+local VirtualUser = game:GetService("VirtualUser")
+
+if not RunService:IsClient() then
+    warn("[MM2 Summer GUI] Run this code from a LocalScript on the client.")
+    return
+end
+
+local player = Players.LocalPlayer
+while not player do
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    player = Players.LocalPlayer
+end
+
+local GUI_NAME = "SkoblikoSummerNeonGUI"
+local WINDOW_WIDTH = 320
+local WINDOW_HEIGHT = 420
+local COLLAPSED_HEIGHT = 70
+local BAG_LIMIT_DEFAULT = 40 -- standard MM2 coin bag
+local BAG_LIMIT_ELITE = 50 -- ELITE gamepass bag (+10 coins)
+local ELITE_GAMEPASS_ID = 429957 -- MM2 "Elite" gamepass
+local MAX_FARM_DISTANCE = 180
+-- Executor touch spoof: lets the character stay deep under the map while the
+-- coin hitbox is still triggered remotely.
+local fireTouch = (typeof(firetouchinterest) == "function" and firetouchinterest)
+    or (typeof(firetouchtransmitter) == "function" and firetouchtransmitter)
+    or nil
+-- Stay deep under the map when touch spoofing works, gentle offset otherwise.
+-- (user confirmed: no anti-cheat kick on this version)
+local FLY_BELOW_OFFSET = fireTouch and 2.8 or 0.75
+-- Original camera occlusion mode, restored when farming stops.
+local originalOcclusionMode = player.DevCameraOcclusionMode
+
+local Theme = {
+    Navy = Color3.fromRGB(5, 13, 36),
+    NavySoft = Color3.fromRGB(10, 29, 65),
+    Card = Color3.fromRGB(17, 39, 76),
+    CardHover = Color3.fromRGB(24, 54, 94),
+
+    OrangeNeon = Color3.fromRGB(255, 147, 45),
+    OrangeSoft = Color3.fromRGB(255, 112, 35),
+    OrangeBright = Color3.fromRGB(255, 190, 105),
+    Red = Color3.fromRGB(255, 91, 104),
+
+    -- Original summer palette for the interface itself.
+    -- Orange remains reserved for the neon elements.
+    Cyan = Color3.fromRGB(44, 226, 222),
+    Aqua = Color3.fromRGB(45, 157, 222),
+    Blue = Color3.fromRGB(57, 107, 238),
+    Gold = Color3.fromRGB(255, 214, 99),
+    Orange = Color3.fromRGB(255, 155, 88),
+    Coral = Color3.fromRGB(255, 111, 120),
+
+    White = Color3.fromRGB(244, 251, 255),
+    Muted = Color3.fromRGB(159, 184, 211),
+    Dim = Color3.fromRGB(76, 102, 137),
 }
-local function v15(p1, p2, p3)
-    local s1 = ""
-    local v124 = #p1
-    local n1 = 0
 
-    while true do
-        n1 += 1
+local function create(className, properties, parent)
+    local object = Instance.new(className)
+    for property, value in pairs(properties or {}) do
+        object[property] = value
+    end
+    object.Parent = parent
+    return object
+end
 
-        if not (n1 <= v124) then
-            break
+local function addCorner(parent, radius)
+    return create("UICorner", { CornerRadius = UDim.new(0, radius) }, parent)
+end
+
+local function addStroke(parent, color, thickness, transparency)
+    return create("UIStroke", {
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Color = color,
+        Thickness = thickness or 1,
+        Transparency = transparency or 0,
+    }, parent)
+end
+
+local function addGradient(parent, colors, rotation, transparency)
+    local keypoints = {}
+    for index, entry in ipairs(colors) do
+        keypoints[index] = ColorSequenceKeypoint.new(entry[1], entry[2])
+    end
+    return create("UIGradient", {
+        Color = ColorSequence.new(keypoints),
+        Rotation = rotation or 0,
+        Transparency = transparency or NumberSequence.new(0),
+    }, parent)
+end
+
+local activeTweens = setmetatable({}, { __mode = "k" })
+local function smoothTween(object, duration, goals, style, direction)
+    if activeTweens[object] then
+        activeTweens[object]:Cancel()
+    end
+    local animation = TweenService:Create(
+        object,
+        TweenInfo.new(
+            duration or 0.28,
+            style or Enum.EasingStyle.Sine,
+            direction or Enum.EasingDirection.Out
+        ),
+        goals
+    )
+    activeTweens[object] = animation
+    animation.Completed:Once(function()
+        if activeTweens[object] == animation then
+            activeTweens[object] = nil
         end
+    end)
+    animation:Play()
+    return animation
+end
 
-        local v126 = (n1 - 1) / math.max(v124 - 1, 1)
+local guiParent = player:WaitForChild("PlayerGui")
+local previous = guiParent:FindFirstChild(GUI_NAME)
+if previous then
+    previous:Destroy()
+end
 
-        s1 ..= "<font color=\"rgb(" .. math.floor((p2.R + (p3.R - p2.R) * v126) * 255) .. ", " .. math.floor((p2.G + (p3.G - p2.G) * v126) * 255) .. ", " .. math.floor((p2.B + (p3.B - p2.B) * v126) * 255) .. ")\">" .. p1:sub(n1, n1) .. "</font>"
+local screenGui = create("ScreenGui", {
+    Name = GUI_NAME,
+    DisplayOrder = 1000,
+    IgnoreGuiInset = true,
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, guiParent)
+
+local state = {
+    alive = true,
+    closing = false,
+    minimized = false,
+    autofarm = false,
+    farmSpeed = 25,
+    farmed = 0,
+    dieOnFullBag = false,
+    protection = false,
+    farmPaused = false,
+    pauseReason = "",
+    bagCount = 0,
+    bagLimit = BAG_LIMIT_DEFAULT,
+    bagFound = false,
+    sessionStarted = os.clock(),
+}
+
+local connections = {}
+local farmConnection
+local cameraConnection
+local cleaned = false
+local collisionCache = {}
+
+local function connect(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(connections, connection)
+    return connection
+end
+
+local function restoreCharacter()
+    -- Camera noclip off: restore the original camera occlusion mode.
+    pcall(function()
+        player.DevCameraOcclusionMode = originalOcclusionMode
+    end)
+
+    local character = player.Character
+    if not character then return end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.PlatformStand = false
+        humanoid.AutoRotate = true
     end
 
-    return s1
+    for part, oldCanCollide in pairs(collisionCache) do
+        if part and part.Parent then
+            part.CanCollide = oldCanCollide
+        end
+    end
+    table.clear(collisionCache)
 end
-t1[7] = false
-local v16 = t1[1]
-local v17 = v15("AzureHub", t1[6].Pumpkin, t1[6].Purple)
-local v18 = v15("Best MM2 Script - Halloween Edition!", t1[6].Orange, t1[6].DarkPurple)
-local v19 = v15("Join our discord server! Daily Giveaways", t1[6].Toxic, t1[6].Purple)
-local Popup = v16.Popup
-local v21 = v18 .. "<br/>" .. v19
-local t2 = {
-	Title = "Exit",
-	Callback = function()
-end,
-	Variant = "Tertiary"
-}
-local t3 = {
-	Title = "Copy Discord",
-	Callback = function()
-    setclipboard("https://discord.gg/8pSzTfy46B")
-    t1[1]:Notify({
-			Title = "Discord Copied!",
-			Content = "Discord invite copied to clipboard!",
-			Icon = "check-circle",
-			Duration = 3
-		})
-    t1[7] = true
-end,
-	Variant = "Secondary"
-}
-local t4 = {
-	Title = v15("Continue", t1[6].Toxic, t1[6].Orange),
-	Callback = function()
-    t1[7] = true
-end,
-	Variant = "Primary"
-}
-Popup(v16, {
-	Title = v17,
-	Icon = "skull",
-	Content = v21,
-	Buttons = {
-		t2,
-		t3,
-		t4
-	}
-})
-local _ = t1[7]
-repeat
-    task.wait()
-until t1[7]
-local v26 = t1[1]
-local v27 = v15("AzureHub", t1[6].Pumpkin, t1[6].Purple)
-local uDim2 = UDim2.new(0, 580, 0, 480)
-local _UDim = UDim
-local CreateWindow = v26.CreateWindow
-local v31 = _UDim.new(0.5, 0)
-local colorSequence = ColorSequence.new(t1[6].Pumpkin, t1[6].Purple)
-local t5 = {
-	Title = "Open AzureHub",
-	CornerRadius = v31,
-	StrokeThickness = 2,
-	Enabled = true,
-	Draggable = true,
-	OnlyMobile = false,
-	Color = colorSequence
-}
-t1[8] = CreateWindow(v26, {
-	Title = v27,
-	Author = "by AzuraDev  • Halloween Edition",
-	Folder = "AzureHub",
-	Icon = "skull",
-	NewElements = true,
-	Size = uDim2,
-	Transparent = true,
-	BackgroundTransparency = 0.5,
-	Theme = "Dark",
-	SideBarWidth = 220,
-	HideSearchBar = false,
-	ScrollBarEnabled = true,
-	OpenButton = t5,
-	User = {
-		Enabled = true,
-		Anonymous = false,
-		Callback = function()
+
+local function cleanup()
+    if cleaned then return end
+    cleaned = true
+    state.alive = false
+    state.autofarm = false
+    restoreCharacter()
+
+    if cameraConnection then
+        cameraConnection:Disconnect()
+        cameraConnection = nil
+    end
+    if farmConnection then
+        farmConnection:Disconnect()
+        farmConnection = nil
+    end
+    for _, connection in ipairs(connections) do
+        connection:Disconnect()
+    end
+    table.clear(connections)
 end
-	}
-})
-t1[9] = false
-t1[10] = false
-t1[11] = false
-t1[12] = false
-t1[13] = false
-t1[14] = {}
-t1[15] = 25
-t1[16] = 0
-t1[17] = 0
-t1[18] = 40
-t1[19] = t1[4].Character or t1[4].CharacterAdded:Wait()
-t1[20] = t1[19]:WaitForChild("HumanoidRootPart")
-t1[21] = false
-t1[22] = false
-t1[23] = false
-t1[24] = nil
-t1[25] = game:GetService("MarketplaceService")
-t1[26] = 429957
-local function v34()
-    local ok, result = pcall(function()
-        return t1[25]:UserOwnsGamePassAsync(t1[4].UserId, t1[26])
+
+connect(screenGui.AncestryChanged, function(_, parent)
+    if parent == nil then
+        cleanup()
+    end
+end)
+
+-- Autofarm
+local coinBlacklist = {}
+-- Ghost-coin bookkeeping: hitboxes that survived several touches or lost
+-- their visual children are dead and never get targeted again.
+local coinTouchFails = setmetatable({}, { __mode = "k" })
+local deadCoins = setmetatable({}, { __mode = "k" })
+local coinHadVisual = setmetatable({}, { __mode = "k" })
+local countedCoins = setmetatable({}, { __mode = "k" })
+local currentTarget
+local retargetAccumulator = 0
+local farmIdle = false
+
+-- ================= COIN RADAR =================
+-- Event-driven coin registry: every CoinContainer is hooked once through
+-- ChildAdded/ChildRemoved, so new coins are known the same instant they
+-- spawn - no heavy workspace scans while flying.
+local coinSet = {}
+local trackedContainers = {}
+local lastRadarSweep = 0
+
+-- Universal mode: containers whose currency naming is fully unknown
+-- (after a big update) get every part inside accepted as a coin.
+local lenientContainers = {}
+
+-- Pickup names discovered by the auto detector (see autoDetectPickups).
+local detectedPickupNames = {}
+
+local function isCoinPart(coin)
+    if not coin:IsA("BasePart") then return false end
+    -- Known naming today + any renamed currency of a future update:
+    -- Coin_Server, Candy_Server, Egg_Server, Token_Server, ...
+    if string.find(coin.Name, "Server", 1, true) then return true end
+    if detectedPickupNames[coin.Name] then return true end
+    return lenientContainers[coin.Parent] == true
+end
+
+local function registerCoin(coin)
+    if isCoinPart(coin) then
+        coinSet[coin] = true
+    end
+end
+
+local function unregisterCoin(coin)
+    coinSet[coin] = nil
+    coinBlacklist[coin] = nil
+    coinTouchFails[coin] = nil
+    deadCoins[coin] = nil
+    coinHadVisual[coin] = nil
+end
+
+local function watchContainer(container)
+    if trackedContainers[container] then return end
+    trackedContainers[container] = true
+    -- Destroyed containers disconnect these automatically.
+    connect(container.ChildAdded, registerCoin)
+    connect(container.ChildRemoved, unregisterCoin)
+    for _, coin in ipairs(container:GetChildren()) do
+        registerCoin(coin)
+    end
+end
+
+local function radarSweep(force)
+    -- Cheap safety net: picks up new maps/containers and drops dead coins.
+    if not force and os.clock() - lastRadarSweep < 3 then return end
+    lastRadarSweep = os.clock()
+
+    for container in pairs(trackedContainers) do
+        if not container.Parent then
+            trackedContainers[container] = nil
+        end
+    end
+    for coin in pairs(coinSet) do
+        if not coin.Parent then
+            unregisterCoin(coin)
+        end
+    end
+    for _, containerParent in ipairs(workspace:GetChildren()) do
+        local container = containerParent:FindFirstChild("CoinContainer")
+        if container then
+            watchContainer(container)
+        end
+        -- Universal mode: an update may rename the currency container
+        -- (TokenContainer, CandyContainer, ...). Any container-like child
+        -- holding "*Server*" parts is treated as a coin container too.
+        for _, child in ipairs(containerParent:GetChildren()) do
+            if child ~= container
+                and not trackedContainers[child]
+                and string.find(child.Name, "Container", 1, true) then
+                local part = child:FindFirstChildWhichIsA("BasePart")
+                if part and string.find(part.Name, "Server", 1, true) then
+                    watchContainer(child)
+                end
+            end
+        end
+    end
+
+    -- Universal mode: a tracked container holds parts, but none match the
+    -- known "*Server*" naming - the update changed it completely. Accept
+    -- every part inside that container from now on.
+    for container in pairs(trackedContainers) do
+        if container.Parent and not lenientContainers[container] then
+            local hasKnown = false
+            local hasParts = false
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("BasePart") then
+                    hasParts = true
+                    if string.find(child.Name, "Server", 1, true) then
+                        hasKnown = true
+                        break
+                    end
+                end
+            end
+            if hasParts and not hasKnown then
+                lenientContainers[container] = true
+                for _, child in ipairs(container:GetChildren()) do
+                    registerCoin(child)
+                end
+            end
+        end
+    end
+end
+
+connect(workspace.ChildAdded, function(child)
+    -- A new map just streamed in: hook its coin container right away.
+    task.defer(radarSweep, true)
+end)
+
+radarSweep(true)
+
+-- ================= AUTO PICKUP DETECTOR =================
+-- When the radar knows NOTHING farmable (fresh update, renamed everything),
+-- the script figures out on its own what lies on the floor as a pickup:
+-- lots of identical small anchored no-collision parts, ideally with a
+-- touch sensor (the game reacts to touching them) or currency-like names.
+local lastAutoDetect = 0
+
+local PICKUP_NAME_HINTS = {
+    "coin", "candy", "token", "egg", "snow", "gift", "present",
+    "pickup", "collect", "drop", "orb", "shell", "star", "gem",
+}
+local PARENT_NAME_HINTS = {
+    "container", "coin", "drop", "pickup", "spawn", "collect",
+}
+
+local function nameHasHint(name, hints)
+    local lower = string.lower(name)
+    for _, hint in ipairs(hints) do
+        if string.find(lower, hint, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function autoDetectPickups()
+    if os.clock() - lastAutoDetect < 5 then return end
+    lastAutoDetect = os.clock()
+
+    -- Group small anchored no-collision parts by (parent, name).
+    local groups = {}
+    for _, mapCandidate in ipairs(workspace:GetChildren()) do
+        if mapCandidate:IsA("Model") or mapCandidate:IsA("Folder") then
+            for _, part in ipairs(mapCandidate:GetDescendants()) do
+                if part:IsA("BasePart")
+                    and part.Anchored
+                    and not part.CanCollide
+                    and part.Size.Magnitude <= 8 then
+                    local byName = groups[part.Parent]
+                    if not byName then
+                        byName = {}
+                        groups[part.Parent] = byName
+                    end
+                    local info = byName[part.Name]
+                    if info then
+                        info.count += 1
+                    else
+                        byName[part.Name] = { count = 1, sample = part }
+                    end
+                end
+            end
+        end
+    end
+
+    -- Score every group by its "this is a pickup" signature.
+    local bestParent, bestName, bestScore, bestCount = nil, nil, 0, 0
+    for parent, byName in pairs(groups) do
+        for name, info in pairs(byName) do
+            if info.count >= 5 then
+                local sample = info.sample
+                local score = 0
+                if sample:FindFirstChildOfClass("TouchTransmitter") then
+                    score += 4 -- the game listens for touches on it
+                end
+                if nameHasHint(name, PICKUP_NAME_HINTS) then score += 2 end
+                if nameHasHint(parent.Name, PARENT_NAME_HINTS) then score += 2 end
+                if sample:IsA("MeshPart") or sample:FindFirstChildOfClass("SpecialMesh") then
+                    score += 1 -- pickups are usually pretty meshes
+                end
+                if info.count <= 80 then score += 1 end
+                if score >= 4 and (score > bestScore
+                    or (score == bestScore and info.count > bestCount)) then
+                    bestParent, bestName, bestScore, bestCount = parent, name, score, info.count
+                end
+            end
+        end
+    end
+
+    if bestParent then
+        detectedPickupNames[bestName] = true
+        watchContainer(bestParent)
+        for _, part in ipairs(bestParent:GetChildren()) do
+            registerCoin(part)
+        end
+        print(string.format(
+            "[MM2 AUTOFARM] auto-detected pickup: %s x%d in %s (score %d)",
+            bestName, bestCount, bestParent:GetFullName(), bestScore
+        ))
+    end
+end
+
+-- Cluster-aware pick: prefer close coins sitting in dense groups, so the
+-- route sweeps whole clusters instead of zigzagging across the map.
+local CLUSTER_RADIUS = 24
+local CLUSTER_BONUS = 7
+
+-- Perf: the picker briefly reuses its last result (no full rescan every
+-- frame while idle), caches part positions once per scan instead of touching
+-- the .Position property O(n^2) times, and prunes candidates that cannot
+-- mathematically beat the current best. Selection results are identical.
+local lastPickTime = -math.huge
+local lastPickCoin = nil
+local lastPickScore = math.huge
+local lastPickHadResult = false
+
+local function findClosestItem(rootPart)
+    local now = os.clock()
+
+    if now - lastPickTime < 0.15 then
+        if not lastPickHadResult then
+            return nil, math.huge, math.huge
+        end
+        local cached = lastPickCoin
+        if cached and cached.Parent and not coinBlacklist[cached] and not deadCoins[cached] then
+            return cached, (cached.Position - rootPart.Position).Magnitude, lastPickScore
+        end
+    end
+    lastPickTime = now
+
+    for coin, timestamp in pairs(coinBlacklist) do
+        if not coin.Parent or now - timestamp > 1.5 then
+            coinBlacklist[coin] = nil
+        end
+    end
+
+    radarSweep(false)
+
+    local candidates = {}
+    for coin in pairs(coinSet) do
+        if coin.Parent and not coinBlacklist[coin] and not deadCoins[coin] then
+            -- Ghost check: coin hitboxes normally carry visual/touch
+            -- children. A coin that HAD children and lost them all was
+            -- consumed by another player - only the empty hitbox lingers.
+            local childCount = #coin:GetChildren()
+            if childCount > 0 then
+                coinHadVisual[coin] = true
+                table.insert(candidates, coin)
+            elseif not coinHadVisual[coin] then
+                table.insert(candidates, coin)
+            end
+        end
+    end
+
+    local count = #candidates
+    local rootPosition = rootPart.Position
+    local positions = table.create(count)
+    local distances = table.create(count)
+    local order = table.create(count)
+    for index = 1, count do
+        local position = candidates[index].Position
+        positions[index] = position
+        distances[index] = (position - rootPosition).Magnitude
+        order[index] = index
+    end
+    table.sort(order, function(a, b)
+        return distances[a] < distances[b]
     end)
 
-    if ok then
-        if result then
-            t1[18] = 50
-            print("[Gamepass Check] ✅ You own the premium gamepass!")
-
-            return
+    local best, bestDistance, bestScore = nil, math.huge, math.huge
+    local maxBonus = 6 * CLUSTER_BONUS
+    for _, index in ipairs(order) do
+        local distance = distances[index]
+        if distance - maxBonus >= bestScore then
+            break -- Even a max cluster bonus cannot beat the current best.
         end
+        local position = positions[index]
+        local neighbors = 0
+        for otherIndex = 1, count do
+            if otherIndex ~= index and (positions[otherIndex] - position).Magnitude <= CLUSTER_RADIUS then
+                neighbors += 1
+                if neighbors >= 6 then
+                    break -- The cluster bonus is capped at 6 neighbours.
+                end
+            end
+        end
+        local score = distance - neighbors * CLUSTER_BONUS
+        if score < bestScore then
+            best = candidates[index]
+            bestDistance = distance
+            bestScore = score
+        end
+    end
 
-        t1[18] = 40
-        print("[Gamepass Check] ❌ You do NOT own the premium gamepass.")
+    lastPickCoin = best
+    lastPickScore = bestScore
+    lastPickHadResult = best ~= nil
 
+    return best, bestDistance, bestScore
+end
+
+local function isRoundOver()
+    -- The end-of-round scoreboard (Scoreboard / Scoreboard_Phone) becomes
+    -- visible when the round finishes; farming must pause immediately.
+    for _, guiName in ipairs({ "Scoreboard", "Scoreboard_Phone" }) do
+        local scoreboard = guiParent:FindFirstChild(guiName)
+        if scoreboard and scoreboard:IsA("ScreenGui") and scoreboard.Enabled then
+            for _, modeFrame in ipairs(scoreboard:GetChildren()) do
+                if modeFrame:IsA("GuiObject") and modeFrame.Visible then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
+    if not state.alive then return end
+
+    if not state.autofarm then
+        state.farmPaused = false
+        state.pauseReason = ""
         return
     end
 
-    t1[18] = 40
-    print("[Gamepass Check] ⚠\239\184\143 Failed to check ownership.")
-end
-v34()
-t1[27] = false
-t1[28] = false
-t1[29] = { "Esp All" }
-t1[30] = true
-t1[31] = false
-t1[32] = {}
-t1[33] = ""
-t1[34] = 1
-t1[35] = ""
-t1[36] = ""
-t1[37] = nil
-if t1[4].PlayerGui.MainGUI.Game:FindFirstChild("Inventory") ~= nil then
-    t1[37] = t1[4].PlayerGui.MainGUI.Game.Inventory.Main
-else
-    t1[37] = t1[4].PlayerGui.MainGUI.Lobby.Screens.Inventory.Main
-end
-t1[38] = {
-	WalkSpeed = {
-		Value = 16,
-		Default = 16,
-		Locked = false
-	},
-	JumpPower = {
-		Value = 50,
-		Default = 50,
-		Locked = false
-	}
-}
-t1[39] = nil
-t1[39] = function(p4)
-    local Character = p4.Character
+    local character = player.Character
+    if not character then
+        state.farmPaused = true
+        state.pauseReason = "RESPAWN"
+        return
+    end
 
-    if not Character then
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not rootPart or not humanoid or humanoid.Health <= 0 then
+        state.farmPaused = true
+        state.pauseReason = "RESPAWN"
+        return
+    end
+
+    -- Round finished: stop moving and stop counting until the next round.
+    if isRoundOver() then
+        currentTarget = nil
+        state.farmPaused = true
+        state.pauseReason = "ROUND END"
+        restoreCharacter()
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+        return
+    end
+
+    -- Keep the provided working target/movement base, adding only pause checks.
+    if not currentTarget or not currentTarget.Parent or coinBlacklist[currentTarget] then
+        local candidate, candidateDistance = findClosestItem(rootPart)
+
+        if candidate and candidateDistance <= MAX_FARM_DISTANCE then
+            currentTarget = candidate
+            state.farmPaused = false
+            state.pauseReason = ""
+        else
+            currentTarget = nil
+            state.farmPaused = true
+            state.pauseReason = candidate and "TOO FAR" or "WAITING"
+            -- Radar is empty: let the auto detector figure out what the
+            -- pickups of this map/update are.
+            if not candidate then
+                autoDetectPickups()
+            end
+        end
+    end
+
+    -- Mid-flight retarget: if a clearly better coin appeared (fresh spawn or
+    -- a dense cluster nearby), switch to it instead of finishing a bad route.
+    retargetAccumulator += deltaTime
+    if currentTarget and retargetAccumulator >= 0.5 then
+        retargetAccumulator = 0
+        local candidate, candidateDistance, candidateScore = findClosestItem(rootPart)
+        if candidate and candidate ~= currentTarget and candidateDistance <= MAX_FARM_DISTANCE then
+            local currentDistance = (currentTarget.Position - rootPart.Position).Magnitude
+            -- Hysteresis: never abandon a coin we are about to grab -
+            -- that caused the annoying last-moment turn-aways.
+            if currentDistance > 15 and candidateScore + 12 < currentDistance then
+                currentTarget = candidate
+            end
+        end
+    end
+
+    local target = currentTarget
+    if not target or not target.Parent then
+        -- Nothing to farm on the map: switch off temporarily. Restore the
+        -- character ONCE and give control back to the player instead of
+        -- freezing them every frame; farming resumes by itself as soon as
+        -- the radar sees new pickups.
+        if not farmIdle then
+            farmIdle = true
+            restoreCharacter()
+            rootPart.AssemblyLinearVelocity = Vector3.zero
+            rootPart.AssemblyAngularVelocity = Vector3.zero
+        end
+        return
+    end
+    farmIdle = false
+
+    local targetPosition = target.Position - Vector3.new(0, FLY_BELOW_OFFSET, 0)
+    local offset = targetPosition - rootPart.Position
+    local distance = offset.Magnitude
+
+    if distance > MAX_FARM_DISTANCE then
+        currentTarget = nil
+        state.farmPaused = true
+        state.pauseReason = "TOO FAR"
+        restoreCharacter()
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+        return
+    end
+
+    state.farmPaused = false
+    state.pauseReason = ""
+
+    -- Camera noclip: the map between the camera and the character becomes
+    -- see-through, so everything can be watched from above while farming.
+    if player.DevCameraOcclusionMode ~= Enum.DevCameraOcclusionMode.Invisicam then
+        pcall(function()
+            player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+        end)
+    end
+
+    -- Original working noclip behavior, only while a nearby target exists.
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if collisionCache[part] == nil then
+                collisionCache[part] = part.CanCollide
+            end
+            part.CanCollide = false
+        end
+    end
+
+    humanoid.PlatformStand = true
+    rootPart.AssemblyLinearVelocity = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
+
+    if distance <= 0.45 then
+        -- Reach the coin hitbox from under the map.
+        if fireTouch then
+            pcall(fireTouch, rootPart, target, 0)
+            pcall(fireTouch, rootPart, target, 1)
+        end
+        coinBlacklist[target] = os.clock()
+        -- A real coin disappears right after a touch. One that survives
+        -- several touch rounds is a dead hitbox - retire it for good.
+        -- Never count failures while the bag is full: nothing can be
+        -- collected then and every coin would get wrongly retired.
+        local bagFull = state.bagFound and state.bagLimit > 0
+            and state.bagCount >= state.bagLimit
+        if not bagFull then
+            coinTouchFails[target] = (coinTouchFails[target] or 0) + 1
+            if coinTouchFails[target] >= 3 then
+                deadCoins[target] = true
+            end
+        end
+        currentTarget = nil
+        return
+    end
+
+    if distance <= 0.001 then return end
+
+    local safeDelta = math.min(deltaTime, 1 / 30)
+    local step = math.min(state.farmSpeed * safeDelta, math.max(distance - 0.1, 0))
+    local nextPosition = rootPart.Position + offset.Unit * step
+
+    -- Static horizontal pose: the body always stays perfectly flat.
+    -- Only the yaw (horizontal heading) follows the coin, so there is no
+    -- rocking/tilting when approaching a coin from above or below.
+    local flatOffset = Vector3.new(offset.X, 0, offset.Z)
+    if flatOffset.Magnitude > 0.05 then
+        rootPart.CFrame = CFrame.lookAt(nextPosition, nextPosition + flatOffset.Unit) * CFrame.Angles(-math.pi / 2, 0, 0)
+    else
+        rootPart.CFrame = rootPart.CFrame.Rotation + nextPosition
+    end
+end)
+
+-- ================= ANTI FLING / ANTI VOID =================
+-- Protection from exploiters: abnormal velocity is cancelled instantly and
+-- the character is pulled back onto the last safe spot instead of flying
+-- away or falling into the void.
+local lastSafePosition = nil
+local lastFramePosition = nil
+local safePosAccumulator = 0
+local voidThreshold = -440
+do
+    local ok, destroyHeight = pcall(function()
+        return workspace.FallenPartsDestroyHeight
+    end)
+    if ok and typeof(destroyHeight) == "number" then
+        voidThreshold = destroyHeight + 80
+    end
+end
+
+connect(RunService.Heartbeat, function(deltaTime)
+    if not state.alive or not state.protection then return end
+
+    local character = player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not rootPart or not humanoid or humanoid.Health <= 0 then return end
+
+    local farmingActively = state.autofarm and not state.farmPaused
+
+    -- ANTI FLING: the fling simply fails. Abnormal velocity is cancelled
+    -- and the character stays exactly where it was one frame ago, so the
+    -- farm keeps running as if nothing happened. Vertical speed is checked
+    -- separately so normal jumps and falls never trigger the protection.
+    local velocity = rootPart.AssemblyLinearVelocity
+    local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+    local flingLimit = farmingActively and 300 or 120
+    if horizontalSpeed > flingLimit
+        or velocity.Y > 150
+        or velocity.Y < -260
+        or rootPart.AssemblyAngularVelocity.Magnitude > 60 then
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+        if lastFramePosition then
+            rootPart.CFrame = rootPart.CFrame.Rotation + lastFramePosition
+        end
+    end
+
+    -- Legit game teleport (lobby -> map at round start, respawn): a huge
+    -- position jump WITHOUT abnormal velocity. Flings cannot do this - they
+    -- work through velocity and get caught above. Accept the teleport and
+    -- rebase all anchors so the protection never bounces the player back.
+    if lastFramePosition and (rootPart.Position - lastFramePosition).Magnitude > 120 then
+        lastFramePosition = rootPart.Position
+        lastSafePosition = nil
+        safePosAccumulator = 0
+    end
+
+    -- ANTI VOID: only below the absolute kill height of the world.
+    local inVoid = rootPart.Position.Y < voidThreshold
+    if inVoid and lastSafePosition and not farmingActively then
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+        rootPart.CFrame = CFrame.new(lastSafePosition + Vector3.new(0, 3, 0))
+    end
+
+    -- Remember the last calm, grounded position as the rescue point.
+    safePosAccumulator += deltaTime
+    if safePosAccumulator >= 0.5 then
+        safePosAccumulator = 0
+        if not humanoid.PlatformStand
+            and humanoid.FloorMaterial ~= Enum.Material.Air
+            and rootPart.AssemblyLinearVelocity.Magnitude < 60 then
+            lastSafePosition = rootPart.Position
+        end
+    end
+
+    -- Frame-by-frame anchor for the silent fling rollback.
+    lastFramePosition = rootPart.Position
+end)
+
+-- ================= ANTI AFK =================
+-- Roblox kicks idle players after ~20 minutes. When the game marks the
+-- player as idle, a tiny virtual input resets the idle timer, so the farm
+-- can run for hours unattended.
+connect(player.Idled, function()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
+-- Root layout
+local holder = create("Frame", {
+    Name = "Holder",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundTransparency = 1,
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
+}, screenGui)
+
+local responsiveScale = create("UIScale", { Scale = 1 }, holder)
+local statsScale = nil -- created together with the stats panel below
+
+-- Phones have a short (in logical pixels) touch screen: scale the whole
+-- interface down there so the game stays visible around it.
+local function isPhoneScreen()
+    local camera = workspace.CurrentCamera
+    if not camera then return false end
+    return UserInputService.TouchEnabled and camera.ViewportSize.Y <= 620
+end
+
+local function updateScale()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local viewport = camera.ViewportSize
+    local scale = math.min((viewport.X - 28) / WINDOW_WIDTH, (viewport.Y - 28) / WINDOW_HEIGHT)
+    local minScale = 0.58
+    if isPhoneScreen() then
+        -- The window may take at most ~74% of the phone screen height.
+        scale = math.min(scale, (viewport.Y * 0.74) / WINDOW_HEIGHT)
+        minScale = 0.4
+    end
+    responsiveScale.Scale = math.clamp(scale, minScale, 1)
+
+    if statsScale then
+        if isPhoneScreen() then
+            -- Mini stats panel: at most ~42% of the phone screen height.
+            statsScale.Scale = math.clamp((viewport.Y * 0.42) / 202, 0.55, 1)
+        else
+            statsScale.Scale = 1
+        end
+    end
+end
+
+local function clampWindow()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    local viewport = camera.ViewportSize
+    local scale = responsiveScale.Scale
+    local visibleHeight = (state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT) * scale
+    local halfWidth = WINDOW_WIDTH * scale * 0.5
+    local fullHalfHeight = WINDOW_HEIGHT * scale * 0.5
+
+    local position = holder.Position
+    local centerX = position.X.Scale * viewport.X + position.X.Offset
+    local centerY = position.Y.Scale * viewport.Y + position.Y.Offset
+
+    centerX = math.clamp(centerX, halfWidth + 8, math.max(halfWidth + 8, viewport.X - halfWidth - 8))
+    centerY = math.clamp(centerY, fullHalfHeight + 8, math.max(fullHalfHeight + 8, viewport.Y - visibleHeight + fullHalfHeight - 8))
+    holder.Position = UDim2.fromOffset(centerX, centerY)
+end
+
+local function refreshViewport()
+    updateScale()
+    clampWindow()
+end
+
+local function bindCamera()
+    if cameraConnection then cameraConnection:Disconnect() end
+    local camera = workspace.CurrentCamera
+    if camera then
+        cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshViewport)
+    end
+    refreshViewport()
+end
+
+connect(workspace:GetPropertyChangedSignal("CurrentCamera"), bindCamera)
+bindCamera()
+
+-- UI sounds (experiment #11): built-in Roblox asset, pitch-shifted per event.
+local SoundService = game:GetService("SoundService")
+
+local function playUiSound(speed, volume)
+    pcall(function()
+        local sound = Instance.new("Sound")
+        sound.SoundId = "rbxasset://sounds/button.wav"
+        sound.PlaybackSpeed = speed or 1
+        sound.Volume = volume or 0.6
+        sound.PlayOnRemove = true
+        sound.Parent = SoundService
+        sound:Destroy()
+    end)
+end
+
+-- Soft drop shadow around the window (experiment #10).
+local shadow = create("ImageLabel", {
+    Name = "Shadow",
+    BackgroundTransparency = 1,
+    Image = "rbxassetid://1316045217",
+    ImageColor3 = Color3.fromRGB(2, 6, 20),
+    ImageTransparency = 1,
+    Position = UDim2.fromOffset(-28, -20),
+    ScaleType = Enum.ScaleType.Slice,
+    SliceCenter = Rect.new(10, 10, 118, 118),
+    Size = UDim2.fromOffset(WINDOW_WIDTH + 56, WINDOW_HEIGHT + 56),
+    Visible = false,
+    ZIndex = 0,
+}, holder)
+
+local window = create("CanvasGroup", {
+    Name = "Window",
+    BackgroundColor3 = Theme.Navy,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+    GroupTransparency = 1,
+    Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT),
+    ZIndex = 1,
+}, holder)
+addCorner(window, 17)
+
+local windowStroke = addStroke(window, Theme.OrangeNeon, 2.5, 0)
+-- Snake border: a bright orange segment with a fading tail chasing around the window.
+local borderGradient = addGradient(windowStroke, {
+    { 0, Theme.OrangeBright },
+    { 0.14, Theme.OrangeNeon },
+    { 0.4, Theme.OrangeSoft },
+    { 1, Theme.OrangeSoft },
+}, 25)
+borderGradient.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0),
+    NumberSequenceKeypoint.new(0.1, 0.05),
+    NumberSequenceKeypoint.new(0.3, 0.62),
+    NumberSequenceKeypoint.new(0.6, 0.86),
+    NumberSequenceKeypoint.new(1, 0.92),
+})
+
+local background = create("Frame", {
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+    Size = UDim2.fromScale(1, 1),
+    ZIndex = 1,
+}, window)
+addCorner(background, 16)
+local backgroundGradient = addGradient(background, {
+    { 0, Color3.fromRGB(16, 82, 137) },
+    { 0.48, Color3.fromRGB(12, 44, 92) },
+    { 0.78, Color3.fromRGB(48, 34, 104) },
+    { 1, Color3.fromRGB(12, 24, 62) },
+}, 125)
+
+-- Subtle vertical sheen: dark -> slightly lighter -> dark (experiment #9),
+-- roughly a 3-4% highlight band through the middle of the window.
+local sheen = create("Frame", {
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BackgroundTransparency = 0.96,
+    BorderSizePixel = 0,
+    Size = UDim2.fromScale(1, 1),
+    ZIndex = 2,
+}, window)
+addCorner(sheen, 16)
+create("UIGradient", {
+    Color = ColorSequence.new(Color3.new(1, 1, 1)),
+    Rotation = 90,
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.35, 0.55),
+        NumberSequenceKeypoint.new(0.5, 0.35),
+        NumberSequenceKeypoint.new(0.65, 0.55),
+        NumberSequenceKeypoint.new(1, 1),
+    }),
+}, sheen)
+
+local topNeon = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0),
+    BackgroundColor3 = Theme.OrangeNeon,
+    BackgroundTransparency = 0.12,
+    BorderSizePixel = 0,
+    Position = UDim2.new(0.5, 0, 0, 63),
+    Size = UDim2.new(1, -34, 0, 2),
+    ZIndex = 6,
+}, window)
+addCorner(topNeon, 99)
+local topNeonGradient = create("UIGradient", {
+    Color = ColorSequence.new(Theme.OrangeNeon),
+    Rotation = 0,
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.16, 0.2),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(0.84, 0.2),
+        NumberSequenceKeypoint.new(1, 1),
+    }),
+}, topNeon)
+
+local glow = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Theme.Cyan,
+    BackgroundTransparency = 0.58,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(330, 95),
+    Size = UDim2.fromOffset(230, 150),
+    ZIndex = 2,
+}, window)
+addCorner(glow, 999)
+addGradient(glow, {
+    { 0, Theme.Cyan },
+    { 0.55, Theme.Aqua },
+    { 1, Theme.Blue },
+}, 25, NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.2),
+    NumberSequenceKeypoint.new(1, 0.85),
+}))
+
+local warmGlow = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Theme.Coral,
+    BackgroundTransparency = 0.68,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(45, 330),
+    Size = UDim2.fromOffset(210, 145),
+    ZIndex = 2,
+}, window)
+addCorner(warmGlow, 999)
+addGradient(warmGlow, {
+    { 0, Theme.Coral },
+    { 0.5, Theme.Gold },
+    { 1, Theme.Orange },
+}, -30, NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.35),
+    NumberSequenceKeypoint.new(1, 0.9),
+}))
+
+local glints = {}
+local glintPositions = {
+    { 34, 92, Theme.Cyan, 0.2 },
+    { 326, 142, Theme.Gold, 1.1 },
+    { 54, 214, Theme.Coral, 2.0 },
+    { 312, 278, Theme.Cyan, 2.8 },
+    { 94, 360, Theme.Gold, 3.7 },
+    { 286, 350, Theme.Coral, 4.4 },
+}
+
+for index, info in ipairs(glintPositions) do
+    local glint = create("Frame", {
+        Name = "Glint" .. index,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(info[1], info[2]),
+        Size = UDim2.fromOffset(10, 10),
+        ZIndex = 3,
+    }, window)
+
+    local vertical = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = info[3],
+        BackgroundTransparency = 0.35,
+        BorderSizePixel = 0,
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(2, 10),
+        ZIndex = 3,
+    }, glint)
+    addCorner(vertical, 99)
+
+    local horizontal = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = info[3],
+        BackgroundTransparency = 0.35,
+        BorderSizePixel = 0,
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(10, 2),
+        ZIndex = 3,
+    }, glint)
+    addCorner(horizontal, 99)
+
+    table.insert(glints, {
+        object = glint,
+        vertical = vertical,
+        horizontal = horizontal,
+        baseX = info[1],
+        baseY = info[2],
+        phase = info[4],
+    })
+end
+
+local header = create("Frame", {
+    Name = "Header",
+    Active = true,
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(16, 10),
+    Size = UDim2.new(1, -32, 0, 50),
+    ZIndex = 20,
+}, window)
+
+local sunGlowOuter = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Theme.Gold,
+    BackgroundTransparency = 0.86,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(16, 25),
+    Size = UDim2.fromOffset(38, 38),
+    ZIndex = 20,
+}, header)
+addCorner(sunGlowOuter, 99)
+
+local sunGlowInner = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Theme.Orange,
+    BackgroundTransparency = 0.7,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(16, 25),
+    Size = UDim2.fromOffset(28, 28),
+    ZIndex = 21,
+}, header)
+addCorner(sunGlowInner, 99)
+
+local sun = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Theme.Gold,
+    BackgroundTransparency = 0,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(16, 25),
+    Size = UDim2.fromOffset(18, 18),
+    ZIndex = 22,
+}, header)
+addCorner(sun, 99)
+addGradient(sun, {
+    { 0, Theme.Gold },
+    { 1, Theme.Orange },
+}, 45)
+
+-- 12 rays with alternating lengths + a hot white core, shimmering per-ray.
+local sunRays = {}
+for rayIndex = 1, 12 do
+    local angle = math.rad((rayIndex - 1) * 30)
+    local isLong = rayIndex % 2 == 1
+    local ray = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = isLong and Theme.Gold or Theme.Orange,
+        BackgroundTransparency = 0.04,
+        BorderSizePixel = 0,
+        Position = UDim2.fromScale(
+            0.5 + math.cos(angle) * (isLong and 1.05 or 0.88),
+            0.5 + math.sin(angle) * (isLong and 1.05 or 0.88)
+        ),
+        Rotation = (rayIndex - 1) * 30,
+        Size = isLong and UDim2.fromOffset(8, 2) or UDim2.fromOffset(5, 2),
+        ZIndex = 21,
+    }, sun)
+    addCorner(ray, 99)
+    table.insert(sunRays, ray)
+end
+
+local sunCore = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Color3.fromRGB(255, 244, 214),
+    BorderSizePixel = 0,
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(8, 8),
+    ZIndex = 23,
+}, sun)
+addCorner(sunCore, 99)
+
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Position = UDim2.fromOffset(38, 6),
+    Size = UDim2.fromOffset(180, 28),
+    RichText = true,
+    Text = '<font color="#2CE2DE">MM2 SUMMER</font> <font color="#FFD663">AUTOFARM</font>',
+    TextSize = 14,
+    TextStrokeColor3 = Theme.Aqua,
+    TextStrokeTransparency = 0.48,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 22,
+}, header)
+
+-- Version label in the header.
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Position = UDim2.fromOffset(38, 37),
+    Size = UDim2.fromOffset(28, 14),
+    Text = "v1.2",
+    TextColor3 = Theme.Muted,
+    TextSize = 9,
+    TextTransparency = 0.2,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 22,
+}, header)
+
+local function makeHeaderButton(name, text, offset, accent)
+    -- Fully round header buttons with hover glow (experiment #7).
+    local button = create("TextButton", {
+        Name = name,
+        AnchorPoint = Vector2.new(1, 0.5),
+        AutoButtonColor = false,
+        BackgroundColor3 = Theme.Card,
+        BackgroundTransparency = 0.18,
+        BorderSizePixel = 0,
+        Font = Enum.Font.GothamBold,
+        Position = UDim2.new(1, offset, 0.5, 0),
+        Size = UDim2.fromOffset(36, 36),
+        Text = text,
+        TextColor3 = Theme.White,
+        TextSize = 20,
+        ZIndex = 24,
+    }, header)
+    addCorner(button, 99)
+    local outline = addStroke(button, accent, 1, 0.48)
+
+    connect(button.MouseEnter, function()
+        smoothTween(button, 0.3, { BackgroundColor3 = accent, BackgroundTransparency = 0.14 })
+        smoothTween(outline, 0.3, { Transparency = 0.08 })
+    end)
+    connect(button.MouseLeave, function()
+        smoothTween(button, 0.35, {
+            BackgroundColor3 = Theme.Card,
+            BackgroundTransparency = 0.18,
+            Size = UDim2.fromOffset(36, 36),
+        })
+        smoothTween(outline, 0.35, { Transparency = 0.48 })
+    end)
+    connect(button.MouseButton1Down, function()
+        smoothTween(button, 0.12, { Size = UDim2.fromOffset(33, 33) })
+    end)
+    connect(button.MouseButton1Up, function()
+        smoothTween(button, 0.26, { Size = UDim2.fromOffset(36, 36) }, Enum.EasingStyle.Back)
+    end)
+    connect(button.Activated, function()
+        playUiSound(1.2, 0.7)
+    end)
+    return button
+end
+
+local closeButton = makeHeaderButton("Close", "×", 0, Theme.Coral)
+local minimizeButton = makeHeaderButton("Minimize", "—", -42, Theme.Cyan)
+
+local content = create("Frame", {
+    Name = "Content",
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(15, 70),
+    Size = UDim2.new(1, -30, 1, -85),
+    ZIndex = 10,
+}, window)
+
+local function makeCard(name, y, height)
+    local card = create("Frame", {
+        Name = name,
+        BackgroundColor3 = Theme.Card,
+        BackgroundTransparency = 0.04,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Position = UDim2.fromOffset(0, y),
+        Size = UDim2.new(1, 0, 0, height),
+        ZIndex = 10,
+    }, content)
+    addCorner(card, 10)
+    local outline = addStroke(card, Theme.Aqua, 1.5, 0.18)
+    addGradient(card, {
+        { 0, Color3.fromRGB(38, 111, 158) },
+        { 0.58, Color3.fromRGB(20, 65, 112) },
+        { 1, Color3.fromRGB(73, 49, 126) },
+    }, 10)
+    return card, outline
+end
+
+local glowBars = {}
+
+local function addOrangeFade(frame, centerTransparency)
+    return create("UIGradient", {
+        Color = ColorSequence.new(Theme.OrangeNeon),
+        Rotation = 90,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.16, 0.72),
+            NumberSequenceKeypoint.new(0.5, centerTransparency),
+            NumberSequenceKeypoint.new(0.84, 0.72),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+    }, frame)
+end
+
+local function addGlowBar(parent, y, height)
+    local x = 12
+
+    local auraWide = create("Frame", {
+        BackgroundColor3 = Theme.OrangeNeon,
+        BackgroundTransparency = 0.95,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(x - 9, y - 18),
+        Size = UDim2.fromOffset(20, height + 36),
+        ZIndex = 10,
+    }, parent)
+    addCorner(auraWide, 99)
+    addOrangeFade(auraWide, 0.34)
+
+    local auraMid = create("Frame", {
+        BackgroundColor3 = Theme.OrangeNeon,
+        BackgroundTransparency = 0.82,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(x - 5, y - 10),
+        Size = UDim2.fromOffset(12, height + 20),
+        ZIndex = 11,
+    }, parent)
+    addCorner(auraMid, 99)
+    addOrangeFade(auraMid, 0.16)
+
+    local auraNear = create("Frame", {
+        BackgroundColor3 = Theme.OrangeNeon,
+        BackgroundTransparency = 0.58,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(x - 2, y - 4),
+        Size = UDim2.fromOffset(6, height + 8),
+        ZIndex = 12,
+    }, parent)
+    addCorner(auraNear, 99)
+    addOrangeFade(auraNear, 0.02)
+
+    local core = create("Frame", {
+        BackgroundColor3 = Theme.OrangeNeon,
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(x, y),
+        Size = UDim2.fromOffset(2, height),
+        ZIndex = 14,
+    }, parent)
+    addCorner(core, 99)
+
+    local coreGradient = create("UIGradient", {
+        Color = ColorSequence.new(Theme.OrangeNeon),
+        Rotation = 90,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.72),
+            NumberSequenceKeypoint.new(0.15, 0.1),
+            NumberSequenceKeypoint.new(0.5, 0),
+            NumberSequenceKeypoint.new(0.85, 0.1),
+            NumberSequenceKeypoint.new(1, 0.72),
+        }),
+    }, core)
+
+    local sharp = create("Frame", {
+        BackgroundColor3 = Theme.OrangeBright,
+        BackgroundTransparency = 0.24,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(x + 1, y + 3),
+        Size = UDim2.fromOffset(1, math.max(8, height - 6)),
+        ZIndex = 15,
+    }, parent)
+    addCorner(sharp, 99)
+    create("UIGradient", {
+        Color = ColorSequence.new(Theme.OrangeBright),
+        Rotation = 90,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.22, 0.32),
+            NumberSequenceKeypoint.new(0.5, 0.08),
+            NumberSequenceKeypoint.new(0.78, 0.32),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+    }, sharp)
+
+    table.insert(glowBars, {
+        auraWide = auraWide,
+        auraMid = auraMid,
+        auraNear = auraNear,
+        core = core,
+        sharp = sharp,
+        gradient = coreGradient,
+        phase = #glowBars * 1.1,
+    })
+
+    return core
+end
+
+local authorCard = makeCard("Author", 0, 48)
+addGlowBar(authorCard, 8, 32, Theme.Gold, Theme.Orange)
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamSemibold,
+    Position = UDim2.fromOffset(29, 0),
+    Size = UDim2.new(1, -45, 1, 0),
+    Text = "made by skobliko",
+    TextColor3 = Theme.White,
+    TextSize = 15,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 13,
+}, authorCard)
+
+local function makeToggleCard(y, title, subtitle, colorA, colorB, callback)
+    local card, outline = makeCard(title, y, 50)
+    addGlowBar(card, 10, 30, colorA, colorB)
+    local hitbox = create("TextButton", {
+        AutoButtonColor = false,
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        Text = "",
+        ZIndex = 18,
+    }, card)
+
+    local icon = create("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Theme.NavySoft,
+        BackgroundTransparency = 0.12,
+        BorderSizePixel = 0,
+        Position = UDim2.new(1, -16, 0.5, 0),
+        Size = UDim2.fromOffset(28, 28),
+        ZIndex = 15,
+    }, card)
+    addCorner(icon, 12)
+    local iconCore = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = colorB,
+        BorderSizePixel = 0,
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(10, 10),
+        ZIndex = 14,
+    }, icon)
+    addCorner(iconCore, 99)
+    local iconGlow = addStroke(iconCore, colorA, 4, 0.72)
+
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        Position = UDim2.fromOffset(28, 15),
+        Size = UDim2.new(1, -82, 0, 20),
+        Text = title,
+        TextColor3 = Theme.White,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 14,
+    }, card)
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham,
+        Position = UDim2.fromOffset(28, 30),
+        Size = UDim2.new(1, -82, 0, 1),
+        Text = "",
+        TextColor3 = Theme.Muted,
+        TextSize = 9,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 14,
+    }, card)
+
+    local stateText = create("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        Position = UDim2.new(1, -68, 0.5, 0),
+        Size = UDim2.fromOffset(42, 18),
+        Text = "",
+        TextColor3 = Theme.Muted,
+        TextSize = 9,
+        TextTransparency = 0.12,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        ZIndex = 15,
+    }, card)
+
+    local track = create("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Theme.Dim,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Position = UDim2.new(1, -16, 0.5, 0),
+        Size = UDim2.fromOffset(1, 1),
+        Visible = false,
+        ZIndex = 14,
+    }, card)
+    addCorner(track, 99)
+    local trackStroke = addStroke(track, colorA, 1.5, 0.62)
+
+    local knob = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Theme.White,
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 12, 0.5, 0),
+        Size = UDim2.fromOffset(18, 18),
+        ZIndex = 15,
+    }, track)
+    addCorner(knob, 99)
+    local knobStroke = addStroke(knob, colorA, 2, 0.7)
+
+    local value = false
+    local function setValue(nextValue)
+        value = nextValue == true
+        stateText.Text = value and "ON" or "OFF"
+        stateText.TextColor3 = value and colorA or Theme.Dim
+        smoothTween(track, 0.38, {
+            BackgroundColor3 = value and colorA or Theme.Dim,
+            BackgroundTransparency = value and 0.08 or 0.48,
+        }, Enum.EasingStyle.Quart)
+        smoothTween(trackStroke, 0.34, {
+            Color = value and colorB or colorA,
+            Transparency = value and 0.08 or 0.62,
+        })
+        smoothTween(knob, 0.42, {
+            Position = value and UDim2.new(1, -12, 0.5, 0) or UDim2.new(0, 12, 0.5, 0),
+            Size = value and UDim2.fromOffset(19, 19) or UDim2.fromOffset(18, 18),
+        }, Enum.EasingStyle.Quart)
+        smoothTween(knobStroke, 0.34, {
+            Color = value and colorB or colorA,
+            Transparency = value and 0.18 or 0.7,
+        })
+        smoothTween(iconCore, 0.35, {
+            BackgroundColor3 = value and colorA or colorB,
+            Size = value and UDim2.fromOffset(15, 15) or UDim2.fromOffset(12, 12),
+        })
+        smoothTween(iconGlow, 0.35, {
+            Color = value and colorA or colorB,
+            Transparency = value and 0.42 or 0.72,
+        })
+        smoothTween(icon, 0.3, {
+            BackgroundColor3 = value and colorA or Theme.NavySoft,
+            BackgroundTransparency = value and 0.68 or 0.12,
+        })
+        callback(value)
+    end
+
+    connect(hitbox.Activated, function()
+        setValue(not value)
+        playUiSound(value and 1.25 or 0.85, 0.8)
+        smoothTween(icon, 0.12, { Size = UDim2.fromOffset(24, 24) })
+        task.delay(0.12, function()
+            if icon.Parent then
+                smoothTween(icon, 0.32, { Size = UDim2.fromOffset(28, 28) }, Enum.EasingStyle.Back)
+            end
+        end)
+    end)
+
+    connect(hitbox.MouseEnter, function()
+        smoothTween(card, 0.35, { BackgroundColor3 = Theme.CardHover, BackgroundTransparency = 0.02 })
+        smoothTween(outline, 0.35, { Transparency = 0.08 })
+    end)
+    connect(hitbox.MouseLeave, function()
+        smoothTween(card, 0.4, { BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.04 })
+        smoothTween(outline, 0.4, { Transparency = 0.18 })
+    end)
+
+    return setValue
+end
+
+local setAutofarmEnabled = makeToggleCard(
+    58,
+    "Auto Farm",
+    "",
+    Theme.Cyan,
+    Theme.Coral,
+    function(enabled)
+        state.autofarm = enabled
+        if not enabled then
+            currentTarget = nil
+            restoreCharacter()
+        end
+    end
+)
+
+local bagKillTriggered = false
+local bagStartFarmed = state.farmed
+local bagCheckEnabledAt = 0
+local bagFullConfirmations = 0
+
+-- ================= INTERFACE BAG SCANNER =================
+-- Reads the coin amount straight from the game's own interface, so the
+-- bag counter always matches what the player actually sees on screen.
+
+local trackedBagLabel = nil
+local lastBagScan = 0
+
+local function labelContext(object)
+    local parts = { object.Name }
+    local ancestor = object.Parent
+    for _ = 1, 6 do
+        if not ancestor then break end
+        table.insert(parts, ancestor.Name)
+        ancestor = ancestor.Parent
+    end
+    return string.lower(table.concat(parts, " "))
+end
+
+local function parseBagText(object)
+    if not (object:IsA("TextLabel") or object:IsA("TextButton")) then
         return nil
     end
 
-    local Backpack = p4:FindFirstChild("Backpack")
-
-    if Character:FindFirstChild("Knife") or Backpack and Backpack:FindFirstChild("Knife") then
-        return "Murderer"
+    local text = object.Text or ""
+    -- Rich text markup and thousands separators must not break the parse.
+    text = string.gsub(text, "<[^<>]->", "")
+    text = string.gsub(text, ",", "")
+    local currentText, capacityText = string.match(text, "^%s*(%d+)%s*/%s*(%d+)%s*$")
+    if currentText then
+        return tonumber(currentText), tonumber(capacityText)
     end
 
-    if Character:FindFirstChild("Gun") or Backpack and Backpack:FindFirstChild("Gun") then
-        return "Sheriff"
-    end
-
-    return "Innocent"
-end
-t1[40] = function(p5, p6)
-    local v134 = t1[39](p5)
-
-    if not v134 then
-        return false
-    end
-
-    if table.find(p6, "Esp All") then
-        return true
-    end
-
-    if table.find(p6, "Esp Murder") and v134 == "Murderer" then
-        return true
-    end
-
-    if table.find(p6, "Esp Sheriff") and v134 == "Sheriff" then
-        return true
-    end
-
-    local v135 = table.find(p6, "Esp Sheriff / Murder")
-
-    if v135 then
-        v135 = v134 == "Sheriff" or v134 == "Murderer"
-    end
-
-    if v135 then
-        return true
-    end
-
-    return false
-end
-t1[41] = function(p7, p8)
-    local RoleHighlight = p7:FindFirstChild("RoleHighlight")
-
-    if not RoleHighlight then
-        RoleHighlight = Instance.new("Highlight")
-        RoleHighlight.Name = "RoleHighlight"
-        RoleHighlight.FillTransparency = 0.5
-        RoleHighlight.OutlineTransparency = 1
-        RoleHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        RoleHighlight.Adornee = p7
-        RoleHighlight.Parent = p7
-    end
-
-    RoleHighlight.FillColor = p8
-end
-t1[42] = function(p9)
-    local RoleHighlight = p9:FindFirstChild("RoleHighlight")
-
-    if RoleHighlight then
-        RoleHighlight:Destroy()
-    end
-end
-t1[43] = function(p10, p11)
-    local drawing = Drawing.new("Line")
-
-    drawing.Thickness = 2
-
-    if not p11 then
-        p11 = Color3.new(1, 1, 1)
-    end
-
-    drawing.Color = p11
-    drawing.Transparency = 1
-    t1[32][p10] = drawing
-end
-t1[44] = function(p12)
-    if t1[32][p12] then
-        t1[32][p12]:Remove()
-        t1[32][p12] = nil
-    end
-end
-local function v35()
-    t1[27] = false
-    t1[28] = false
-
-    for _, player in ipairs(t1[2]:GetPlayers()) do
-        if player ~= t1[4] and player.Character then
-            local v164 = t1[39](player)
-
-            if v164 == "Murderer" then
-                t1[27] = true
-            end
-
-            if v164 == "Sheriff" then
-                t1[28] = true
-            end
-        end
-    end
-
-    for _, player in ipairs(t1[2]:GetPlayers()) do
-        if player ~= t1[4] and player.Character then
-            local v167 = t1[39](player)
-            local v168 = t1[40](player, t1[29])
-
-            if t1[30] then
-                if v168 then
-                    local v169 = v167 == "Murderer" and t1[6].Blood
-
-                    if not v169 then
-                        v169 = v167 == "Sheriff" and t1[6].Toxic or t1[6].Orange
-                    end
-
-                    t1[41](player.Character, v169)
-                else
-                    t1[42](player.Character)
-                end
-            else
-                t1[42](player.Character)
-            end
-
-            if t1[31] and v168 then
-                local v170 = v167 == "Murderer" and t1[6].Blood
-
-                if not v170 then
-                    v170 = v167 == "Sheriff" and t1[6].Toxic or t1[6].Orange
-                end
-
-                if not t1[32][player] then
-                    t1[43](player, v170)
-                else
-                    t1[32][player].Color = v170
-                end
-            else
-                t1[44](player)
-            end
-        end
-    end
-end
-t1[45] = function()
-    local Humanoid = t1[4].Character:FindFirstChildOfClass("Humanoid")
-
-    if Humanoid then
-        if not t1[38].WalkSpeed.Locked then
-            Humanoid.WalkSpeed = t1[38].WalkSpeed.Value
-        end
-
-        if not t1[38].JumpPower.Locked then
-            Humanoid.JumpPower = t1[38].JumpPower.Value
-        end
-    end
-end
-t1[46] = function(p13)
-    local Players = game:GetService("Players")
-    local u146 = false
-
-    local function v147(p14)
-        local v409 = p14:lower()
-
-        if v409 == "all" or v409 == "others" then
-            u146 = true
-
-            return
-        end
-
-        if v409 == "random" then
-            local players = Players:GetPlayers()
-
-            if table.find(players, Players.LocalPlayer) then
-                table.remove(players, table.find(players, Players.LocalPlayer))
-            end
-
-            return players[math.random(#players)]
-        end
-
-        local v411 = v409 ~= "random"
-
-        if v411 then
-            v411 = v409 ~= "all" and v409 ~= "others"
-        end
-
-        if v411 then
-            local _next = next
-            local v413, v414 = Players:GetPlayers()
-            local v415
-
-            repeat
-                repeat
-                    v414, v415 = _next(v413, v414)
-
-                    if not v414 then
-                        return
-                    end
-                until v415 ~= Players.LocalPlayer
-
-                if v415.Name:lower():match("^" .. v409) then
-                    return v415
-                end
-            until v415.DisplayName:lower():match("^" .. v409)
-
-            return v415
-        end
-    end
-    local function v148(p15)
-        local Character = Players.LocalPlayer.Character
-        local v418 = Character and Character:FindFirstChildOfClass("Humanoid")
-        local v419 = v418 and v418.RootPart
-        local Character2 = p15.Character
-        local Humanoid
-        local RootPart
-        local Head
-        local Accessory
-        local Handle
-        if Character2:FindFirstChildOfClass("Humanoid") then
-            Humanoid = Character2:FindFirstChildOfClass("Humanoid")
-        end
-        if Humanoid and Humanoid.RootPart then
-            RootPart = Humanoid.RootPart
-        end
-        if Character2:FindFirstChild("Head") then
-            Head = Character2.Head
-        end
-        if Character2:FindFirstChildOfClass("Accessory") then
-            Accessory = Character2:FindFirstChildOfClass("Accessory")
-        end
-        if Accessory and Accessory:FindFirstChild("Handle") then
-            Handle = Accessory.Handle
-        end
-        local v426 = Character
-        if v426 then
-            v426 = v418 and v419
-        end
-        if v426 then
-            if v419.Velocity.Magnitude < 50 then
-                getgenv().OldPos = v419.CFrame
-            end
-
-            local v427 = Humanoid
-
-            if v427 then
-                v427 = Humanoid.Sit and not u146
-            end
-
-            if v427 then
-                return
-            end
-
-            if Head then
-                game.Workspace.CurrentCamera.CameraSubject = Head
-            elseif not Head and Handle then
-                game.Workspace.CurrentCamera.CameraSubject = Handle
-            elseif Humanoid and RootPart then
-                game.Workspace.CurrentCamera.CameraSubject = Humanoid
-            end
-
-            if not Character2:FindFirstChildWhichIsA("BasePart") then
-                return
-            end
-
-            local function v428(p16, p17, p18)
-                v419.CFrame = CFrame.new(p16.Position) * p17 * p18
-                Character:SetPrimaryPartCFrame(CFrame.new(p16.Position) * p17 * p18)
-                v419.Velocity = Vector3.new(90000000, 900000000, 90000000)
-                v419.RotVelocity = Vector3.new(900000000, 900000000, 900000000)
-            end
-            local function v429(p19)
-                local timestamp = tick()
-                local n2 = 0
-
-                if not (p19.Velocity.Magnitude > 500) and (p19.Parent == p15.Character and p15.Parent == Players) then
-                    local Character3 = p15.Character
-
-                    if Character2 ~= not Character3 and not Humanoid.Sit and not (v418.Health <= 0) then
-                        if not (tick() > timestamp + 2) then
-                        end
-                    end
-                end
-
-                repeat
-                    if not (v419 and Humanoid) then
-                        return
-                    end
-
-                    if p19.Velocity.Magnitude < 50 then
-                        n2 += 100
-                        v428(p19, CFrame.new(0, 1.5, 0) + Humanoid.MoveDirection * p19.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n2), 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, 0) + Humanoid.MoveDirection * p19.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n2), 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(2.25, 1.5, -2.25) + Humanoid.MoveDirection * p19.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n2), 0, 0))
-                        task.wait()
-
-                        local v461 = v428
-                        local cFrame = CFrame.new(-2.25, -1.5, 2.25)
-                        local MoveDirection = Humanoid.MoveDirection
-                        local Magnitude = p19.Velocity.Magnitude
-                        local Angles = CFrame.Angles
-
-                        v461(p19, cFrame + MoveDirection * Magnitude / 1.25, Angles(math.rad(n2), 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, 1.5, 0) + Humanoid.MoveDirection, CFrame.Angles(math.rad(n2), 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, 0) + Humanoid.MoveDirection, CFrame.Angles(math.rad(n2), 0, 0))
-                        task.wait()
-                    else
-                        v428(p19, CFrame.new(0, 1.5, Humanoid.WalkSpeed), CFrame.Angles(1.5707963267948966, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, -Humanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, 1.5, Humanoid.WalkSpeed), CFrame.Angles(1.5707963267948966, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, 1.5, RootPart.Velocity.Magnitude / 1.25), CFrame.Angles(1.5707963267948966, 0, 0))
-                        task.wait()
-
-                        local new = CFrame.new
-                        local v467 = RootPart
-
-                        v428(p19, new(0, -1.5, -v467.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
-                        task.wait()
-
-                        local new2 = CFrame.new
-                        local Magnitude = RootPart.Velocity.Magnitude
-
-                        v428(p19, new2(0, 1.5, Magnitude / 1.25), CFrame.Angles(1.5707963267948966, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, 0), CFrame.Angles(1.5707963267948966, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, 0), CFrame.Angles(-1.5707963267948966, 0, 0))
-                        task.wait()
-                        v428(p19, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                        task.wait()
-                    end
-
-                    local v470 = p19.Velocity.Magnitude > 500
-
-                    if not v470 then
-                        v470 = p19.Parent ~= p15.Character
-
-                        if not v470 then
-                            v470 = p15.Parent ~= Players
-
-                            if not v470 then
-                                local Character4 = p15.Character
-
-                                v470 = Character2 == not Character4
-
-                                if not v470 then
-                                    v470 = Humanoid.Sit
-
-                                    if not v470 then
-                                        v470 = v418.Health <= 0 or tick() > timestamp + 2
-                                    end
-                                end
-                            end
-                        end
-                    end
-                until v470
-            end
-
-            game.Workspace.FallenPartsDestroyHeight = (0/0)
-
-            local BodyVelocity = Instance.new("BodyVelocity")
-
-            BodyVelocity.Name = "EpixVel"
-            BodyVelocity.Parent = v419
-            BodyVelocity.Velocity = Vector3.new(900000000, 900000000, 900000000)
-            BodyVelocity.MaxForce = Vector3.new(1e999, 1e999, 1e999)
-            v418:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-
-            if RootPart and Head then
-                if (RootPart.CFrame.p - Head.CFrame.p).Magnitude > 5 then
-                    v429(Head)
-                else
-                    v429(RootPart)
-                end
-            elseif RootPart and not Head then
-                v429(RootPart)
-            elseif not RootPart and Head then
-                v429(Head)
-            else
-                local v431 = not RootPart
-
-                if v431 then
-                    v431 = not Head and (Accessory and Handle)
-                end
-
-                if not v431 then
-                    return
-                end
-
-                v429(Handle)
-            end
-
-            BodyVelocity:Destroy()
-            v418:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-            game.Workspace.CurrentCamera.CameraSubject = v418
-
-            if not ((v419.Position - getgenv().OldPos.p).Magnitude < 25) then
-            end
-
-            repeat
-                v419.CFrame = getgenv().OldPos * CFrame.new(0, 0.5, 0)
-                Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, 0.5, 0))
-                v418:ChangeState("GettingUp")
-                table.foreach(Character:GetChildren(), function(_, p21)
-                    if p21:IsA("BasePart") then
-                        local vector3 = Vector3.new()
-                        local vector3_2 = Vector3.new()
-
-                        p21.Velocity = vector3
-                        p21.RotVelocity = vector3_2
-                    end
-                end)
-                task.wait()
-            until (v419.Position - getgenv().OldPos.p).Magnitude < 25
-
-            game.Workspace.FallenPartsDestroyHeight = -500
-            game.Workspace.FallenPartsDestroyHeight = -500
-
-            return
-        end
-    end
-
-    if p13[1] then
-        local _next = next
-        local v150
-        while true do
-            local v151
-
-            v150, v151 = _next(p13, v150)
-
-            if not v150 then
-                break
-            end
-
-            v147(v151)
-        end
-        if u146 then
-            local _next2 = next
-            local v153, v154 = Players:GetPlayers()
-
-            while true do
-                local v155
-
-                v154, v155 = _next2(v153, v154)
-
-                if not v154 then
-                    break
-                end
-
-                v148(v155)
-            end
-        end
-        local _next3 = next
-        local v157
-        while true do
-            local v158
-
-            v157, v158 = _next3(p13, v157)
-
-            if not v157 then
-                break
-            end
-
-            if v147(v158) and v147(v158) ~= Players.LocalPlayer then
-                local v159 = v147(v158)
-
-                if v159 then
-                    v148(v159)
-                end
-            elseif not (not v147(v158) and not u146) then
-            end
-        end
-
-        return
-    end
-end
-local function v36(...)
-    local v171
-    for _, player in ipairs(t1[2]:GetPlayers()) do
-        if not (player ~= t1[4] and player.Character) then
-            continue
-        end
-
-        if player.Character:FindFirstChild("Knife") then
-            v171 = player
-
-            break
-        end
-
-        local Backpack = player:FindFirstChild("Backpack")
-
-        if Backpack and Backpack:FindFirstChild("Knife") then
-            v171 = player
-
-            break
-        end
-    end
-    if v171 and v171.Character then
-        local v175 = t1[1]
-        local Name = v171.Name
-        local Notify = v175.Notify
-        local v178 = "Flinging " .. Name .. "!"
-
-        Notify(v175, {
-			Title = "Flinging Murderer",
-			Content = v178,
-			Icon = "zap",
-			Duration = 3
-		})
-        t1[46]({ v171.Name })
-
-        local t6 = {
-			Title = "Fling Complete",
-			Content = "Murderer has been flung!",
-			Icon = "check-circle",
-			Duration = 2
-		}
-
-        t1[1]:Notify(t6)
-
-        return true
-    end
-    local t7 = {
-		Title = "Fling Error",
-		Content = "No murderer found!",
-		Icon = "x-circle",
-		Duration = 3
-	}
-    t1[1]:Notify(t7)
-
-    return false
-end
-t1[47] = function()
-    return t1[4].Character or t1[4].CharacterAdded:Wait()
-end
-t1[48] = function()
-    return t1[47]():WaitForChild("HumanoidRootPart")
-end
-local Remotes = t1[3]:FindFirstChild("Remotes")
-if Remotes then
-    Remotes = t1[3].Remotes:FindFirstChild("Gameplay") and t1[3].Remotes.Gameplay:FindFirstChild("CoinCollected")
-end
-local Remotes2 = t1[3]:FindFirstChild("Remotes")
-if Remotes2 then
-    Remotes2 = t1[3].Remotes:FindFirstChild("Gameplay") and t1[3].Remotes.Gameplay:FindFirstChild("RoundStart")
-end
-local Remotes3 = t1[3]:FindFirstChild("Remotes")
-if Remotes3 then
-    Remotes3 = t1[3].Remotes:FindFirstChild("Gameplay") and t1[3].Remotes.Gameplay:FindFirstChild("RoundEndFade")
-end
-if Remotes2 then
-    Remotes2.OnClientEvent:Connect(function()
-        t1[21] = true
-        t1[24] = t1[48]().CFrame
-        print("[DEBUG] Round started, farming enabled")
-    end)
-end
-if Remotes3 then
-    Remotes3.OnClientEvent:Connect(function()
-        t1[21] = false
-        print("[DEBUG] Round ended, farming disabled")
-    end)
-end
-local function v40()
-    local v181 = t1[48]()
-    local n3 = 1e999
-    local v183
-    for _, child in pairs(workspace:GetChildren()) do
-        if child:FindFirstChild("CoinContainer") then
-            for _, child2 in pairs(child.CoinContainer:GetChildren()) do
-                if child2:IsA("BasePart") and child2:FindFirstChild("TouchInterest") then
-                    local Magnitude = (v181.Position - child2.Position).Magnitude
-
-                    if Magnitude < n3 then
-                        v183 = child2
-                        n3 = Magnitude
-                    end
-                end
-            end
-        end
-    end
-
-    return v183, n3
-end
-t1[49] = function(...)
-    local v189 = t1[48]()
-    local v190
-    local n4 = 1e999
-    for _, child in pairs(workspace:GetChildren()) do
-        if child:FindFirstChild("CoinContainer") then
-            for _, child3 in pairs(child.CoinContainer:GetChildren()) do
-                local v196 = child3:IsA("BasePart")
-
-                if v196 then
-                    v196 = child3:GetAttribute("CoinID") == "Candy" and child3:FindFirstChild("TouchInterest")
-                end
-
-                if v196 then
-                    local Magnitude = (v189.Position - child3.Position).Magnitude
-
-                    if Magnitude < n4 then
-                        v190 = child3
-                        n4 = Magnitude
-                    end
-                end
-            end
-        end
-    end
-    if not v190 then
-        for _, descendant in ipairs(workspace:GetDescendants()) do
-            if descendant:IsA("BasePart") and descendant.Name == "candy" then
-                local Magnitude = (v189.Position - descendant.Position).Magnitude
-
-                if Magnitude < n4 then
-                    v190 = descendant
-                    n4 = Magnitude
-                end
-            end
-        end
-    end
-
-    return v190, n4
-end
-task.spawn(function(...)
-    while true do
-        local v201 = t1[9] or t1[10]
-
-        if v201 then
-            v201 = t1[21] and not t1[22]
-        end
-
-        if v201 then
-            local v202 = t1[48]()
-            local huge = math.huge
-            local v204
-            if t1[10] then
-                v204, huge = t1[49]()
-            elseif t1[9] then
-                v204, huge = v40()
-            end
-            if v204 then
-                if huge > 150 then
-                    v202.CFrame = v204.CFrame
-                    print("[DEBUG] Teleported to distant coin at distance:", huge)
-                else
-                    local v205 = t1[5]
-                    local new = TweenInfo.new
-                    local _Enum = Enum
-                    local Create = v205.Create
-                    local Linear = _Enum.EasingStyle.Linear
-                    local v210 = Create(v205, v202, new(huge / t1[15], Linear), {
-						CFrame = v204.CFrame
-					})
-
-                    v210:Play()
-
-                    local _print = print
-                    local FindFirstChild = v204.FindFirstChild
-
-                    _print("[DEBUG] Tweening to nearby coin at distance:", huge)
-
-                    if FindFirstChild(v204, "TouchInterest") and t1[21] and not t1[9] then
-                        local _ = t1[10]
-                    end
-
-                    repeat
-                        task.wait()
-
-                        local v214 = not v204:FindFirstChild("TouchInterest")
-
-                        if not v214 then
-                            v214 = not t1[21]
-
-                            if not v214 then
-                                v214 = not t1[9] or t1[10]
-                            end
-                        end
-                    until v214
-
-                    v210:Cancel()
-                end
-
-                t1[16] = t1[16] + 1
-                print("[DEBUG] Collected item, total collected:", t1[16])
-            else
-                print("[DEBUG] No valid items found to collect")
-            end
-        end
-
-        task.wait(0.2)
-    end
-end)
-RunService.Stepped:Connect(function(...)
-    local v215 = t1[9] or t1[10]
-
-    if v215 then
-        v215 = t1[21] and not t1[22]
-    end
-
-    if v215 then
-        local Character = t1[4].Character
-
-        if Character and Character:IsDescendantOf(workspace) then
-            local GetDescendants = Character.GetDescendants
-
-            for _, v in ipairs(GetDescendants(Character)) do
-                if v:IsA("BasePart") then
-                    v.CanCollide = false
-                end
-            end
-        end
-    end
-end)
-t1[4].CharacterAdded:Connect(function(character)
-    t1[19] = character
-
-    local HumanoidRootPart = character:WaitForChild("HumanoidRootPart")
-
-    t1[14] = {}
-    t1[20] = HumanoidRootPart
-    t1[17] = 0
-    t1[22] = false
-    t1[23] = false
-    v34()
-    print("[DEBUG] Character respawned, farming state reset")
-end)
-if Remotes then
-    Remotes.OnClientEvent:Connect(function(p22, p23, _, _)
-        if p22 == "Candy" then
-            t1[17] = p23
-            print("[DEBUG] Collected candy! Current amount:", t1[17])
-
-            if t1[17] >= t1[18] then
-                print("[DEBUG] Bag is full! (" .. t1[18] .. " candies reached)")
-                print("[DEBUG] autoEndRound is:", t1[11])
-                print("[DEBUG] autoFlingMurderer is:", t1[13])
-                print("[DEBUG] autoKillMurderer is:", autoKillMurderer)
-
-                local v226 = t1[1]
-                local v227 = t1[17]
-                local v228 = "/" .. t1[18] .. ")"
-                local Notify = v226.Notify
-                local v230 = "Candy bag is full (" .. v227 .. v228
-
-                Notify(v226, {
-					Title = "Bag Full!",
-					Content = v230,
-					Icon = "package",
-					Duration = 3
-				})
-                t1[10] = false
-                t1[9] = false
-                print("[DEBUG] Stopped autofarm")
-
-                if t1[13] then
-                    print("[DEBUG] Auto fling murderer enabled...")
-                    t1[1]:Notify({
-						Title = "Auto Fling Murderer",
-						Content = "Flinging murderer now!",
-						Icon = "zap",
-						Duration = 2
-					})
-                    local v231
-                    for _, player in ipairs(t1[2]:GetPlayers()) do
-                        if not (player ~= t1[4] and player.Character) then
-                            continue
-                        end
-
-                        if player.Character:FindFirstChild("Knife") then
-                            v231 = player
-
-                            break
-                        end
-
-                        local Backpack = player:FindFirstChild("Backpack")
-
-                        if Backpack and Backpack:FindFirstChild("Knife") then
-                            v231 = player
-
-                            break
-                        end
-                    end
-                    if v231 and v231.Character then
-                        print("[DEBUG] Found murderer, flinging:", v231.Name)
-                        v36()
-                        print("[DEBUG] Auto murderer fling completed")
-                    else
-                        print("[DEBUG] No murderer found")
-                    end
-                end
-
-                if t1[11] and not t1[23] then
-                    t1[23] = true
-                    t1[22] = true
-
-                    local v235 = t1[48]()
-
-                    if t1[24] then
-                        print("[DEBUG] Returning to start position...")
-
-                        local v236 = t1[5]:Create(v235, TweenInfo.new(2, Enum.EasingStyle.Linear), {
-							CFrame = t1[24]
-						})
-
-                        v236:Play()
-                        v236.Completed:Wait()
-                    end
-
-                    task.wait(0.5)
-                    print("[DEBUG] Resetting character...")
-
-                    local t8 = {
-						Title = "Auto Reset",
-						Content = "Resetting character instantly!",
-						Icon = "refresh-cw",
-						Duration = 2
-					}
-
-                    t1[1]:Notify(t8)
-
-                    if t1[4].Character then
-                        t1[4].Character:BreakJoints()
-                        t1[4].CharacterAdded:Wait()
-                        task.wait(1.5)
-                        print("[DEBUG] Character reset completed")
-                    end
-
-                    t1[23] = false
-                    t1[22] = false
-                    print("[DEBUG] Farming state reset")
-                end
-            end
-        end
-    end)
-end
-if Remotes2 then
-    Remotes2.OnClientEvent:Connect(function(_, _)
-        t1[14] = {}
-        t1[17] = 0
-        t1[22] = false
-        t1[23] = false
-        t1[21] = true
-        t1[24] = t1[48]().CFrame
-        print("[DEBUG] Round started, farming enabled")
-
-        local v240 = t1[10]
-        local v241 = t1[9]
-
-        if v240 then
-            t1[10] = true
-            t1[1]:Notify({
-				Title = "Round Started!",
-				Content = "Candy autofarm resumed automatically",
-				Icon = "play-circle",
-				Duration = 2
-			})
-        end
-
-        if v241 then
-            t1[9] = true
-            t1[1]:Notify({
-				Title = "Round Started!",
-				Content = "Coin autofarm resumed automatically",
-				Icon = "play-circle",
-				Duration = 2
-			})
-        end
-    end)
-end
-local function v41()
-    wait(math.random(1, 3))
-
-    for _, child in pairs(t1[37].Weapons.Items.Container:GetChildren()) do
-        for _, child4 in pairs(child.Container:GetChildren()) do
-            if child4.Name == "Christmas" or child4.Name == "Halloween" then
-                for _, child5 in pairs(child4.Container:GetChildren()) do
-                    if child5:IsA("Frame") and child5.ItemName.Label.Text == t1[33] then
-                        local AmountText = child5.Container.Amount.Text
-
-                        if AmountText == "" or AmountText == "None" then
-                            child5.Container.Amount.Text = "x2"
-                        else
-                            local num = tonumber(AmountText:match("x(%d+)"))
-
-                            if num then
-                                child5.Container.Amount.Text = "x" .. tostring(num + 1)
-                            end
-                        end
-                    end
-                end
-            else
-                local v265 = child4:IsA("Frame")
-
-                if v265 then
-                    v265 = child4.ItemName.Label.Text == t1[33]
-                end
-
-                if v265 then
-                    local AmountText = child4.Container.Amount.Text
-
-                    if AmountText == "" or AmountText == "None" then
-                        child4.Container.Amount.Text = "x2"
-                    else
-                        local num = tonumber(AmountText:match("x(%d+)"))
-
-                        if num then
-                            child4.Container.Amount.Text = "x" .. tostring(num + 1)
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-t1[50] = function()
-    wait(math.random(3, 5))
-
-    for _, child in pairs(t1[37].Weapons.Items.Container:GetChildren()) do
-        for _, child6 in pairs(child.Container:GetChildren()) do
-            if child6.Name == "Christmas" or child6.Name == "Halloween" then
-                for _, child7 in pairs(child6.Container:GetChildren()) do
-                    if child7:IsA("Frame") and (child7.ItemName.Label.Text ~= "Default Knife" and child7.ItemName.Label.Text ~= "Default Gun") then
-                        local AmountText = child7.Container.Amount.Text
-
-                        if AmountText == "" or AmountText == "None" then
-                            child7.Container.Amount.Text = "x2"
-                        else
-                            local num = tonumber(AmountText:match("x(%d+)"))
-
-                            if num then
-                                child7.Container.Amount.Text = "x" .. tostring(num * 2)
-                            end
-                        end
-                    end
-                end
-            elseif child6:IsA("Frame") then
-                local v250 = child6.ItemName.Label.Text ~= "Default Knife"
-
-                if v250 then
-                    v250 = child6.ItemName.Label.Text ~= "Default Gun"
-                end
-
-                if v250 then
-                    local AmountText = child6.Container.Amount.Text
-
-                    if AmountText == "" or AmountText == "None" then
-                        child6.Container.Amount.Text = "x2"
-                    else
-                        local num = tonumber(AmountText:match("x(%d+)"))
-
-                        if num then
-                            child6.Container.Amount.Text = "x" .. tostring(num * 2)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    for _, child in pairs(t1[37].Pets.Items.Container.Current.Container:GetChildren()) do
-        if child:IsA("Frame") then
-            local AmountText = child.Container.Amount.Text
-
-            if AmountText == "" or AmountText == "None" then
-                child.Container.Amount.Text = "x2"
-            else
-                local num = tonumber(AmountText:match("x(%d+)"))
-
-                if num then
-                    child.Container.Amount.Text = "x" .. tostring(num * 2)
-                end
-            end
-        end
-    end
-end
-t1[51] = function(p28, p29)
-    return p28:gsub("_G_%d%d%d%d", ""):gsub("_K_%d%d%d%d", ""):lower():find(p29:lower(), 1, true) ~= nil
-end
-t1[52] = function()
-    if game:GetService("Players").LocalPlayer.PlayerGui.TradeGUI.Enabled == true or game:GetService("Players").LocalPlayer.PlayerGui.TradeGUI_Phone.Enabled == true then
-        wait(1)
-        t1[1]:Notify({
-			Title = "Trade Scam Active",
-			Content = "Items In Trade Are Now Visual, Remove All Items!",
-			Icon = "alert-triangle",
-			Duration = 5
-		})
-
-        return
-    end
-
-    t1[1]:Notify({
-		Title = "Trade Scam Error",
-		Content = "You Need To Be In Trade For This To Work!",
-		Icon = "x-circle",
-		Duration = 5
-	})
-end
-t1[53] = function()
-    local ok, result = pcall(function()
-        return require(game:GetService("ReplicatedStorage").Database.Sync.MysteryBox)
-    end)
-    local v272 = not ok
-
-    if not v272 then
-        v272 = not result or next(result) == nil
-    end
-
-    if v272 then
-        return "StandardBox"
-    end
-
-    local t9 = {}
-
-    for k, _ in pairs(result) do
-        table.insert(t9, k)
-    end
-
-    return t9[math.random(1, #t9)]
-end
-local function v42(p30)
-    local u277 = p30
-    if not pcall(function()
-        local BoxModule = require(game:GetService("ReplicatedStorage").Modules.BoxModule)
-
-        if u277 and require(game:GetService("ReplicatedStorage").Database.Sync.Item)[u277] then
-            print("Spawning:", u277)
-            BoxModule.OpenBox(t1[53](), u277)
-            pcall(function(...)
-                getsenv(game:GetService("Players").LocalPlayer.PlayerGui.MainGUI.Inventory.NewItem)._G.NewItem(u277, nil, nil, "Weapons", 1)
-            end)
-            t1[1]:Notify({
-				Title = "Success",
-				Content = "Successfully spawned: " .. u277,
-				Icon = "check-circle",
-				Duration = 3
-			})
-
-            return
-        end
-
-        t1[1]:Notify({
-			Title = "Error",
-			Content = "Invalid item: " .. u277,
-			Icon = "x-circle",
-			Duration = 3
-		})
-    end) then
-        t1[1]:Notify({
-			Title = "Error",
-			Content = "Error opening crate for: " .. u277,
-			Icon = "x-circle",
-			Duration = 3
-		})
-    end
-end
-t1[54] = {
-	AutoGrabEnabled = false,
-	NotifyGunDrop = true,
-	GunDropCheckInterval = 1,
-	ActiveGunDrops = {}
-}
-t1[55] = nil
-t1[55] = {
-	"ResearchFacility",
-	"Hospital3",
-	"MilBase",
-	"House2",
-	"Workplace",
-	"Mansion2",
-	"BioLab",
-	"Hotel",
-	"Factory",
-	"Bank2",
-	"PoliceStation"
-}
-t1[56] = function()
-    t1[54].ActiveGunDrops = {}
-
-    for _, v in ipairs(t1[55]) do
-        local v3 = workspace:FindFirstChild(v)
-
-        if v3 then
-            local GunDrop = v3:FindFirstChild("GunDrop")
-
-            if GunDrop then
-                table.insert(t1[54].ActiveGunDrops, GunDrop)
-            end
-        end
-    end
-
-    local GunDrop = workspace:FindFirstChild("GunDrop")
-
-    if GunDrop then
-        table.insert(t1[54].ActiveGunDrops, GunDrop)
-    end
-end
-local function v43(p31)
-    if not p31 then
-        t1[56]()
-
-        if #t1[54].ActiveGunDrops == 0 then
-            t1[1]:Notify({
-				Title = "Gun System",
-				Content = "No guns available on the map",
-				Icon = "x-circle",
-				Duration = 3
-			})
-
-            return false
-        end
-
-        p31 = nil
-
-        local n5 = 1e999
-        local Character = t1[4].Character
-        local v286 = Character and Character:FindFirstChild("HumanoidRootPart")
-
-        if v286 then
-            for _, v in ipairs(t1[54].ActiveGunDrops) do
-                local Magnitude = (v286.Position - v.Position).Magnitude
-
-                if Magnitude < n5 then
-                    n5 = Magnitude
-                    p31 = v
-                end
-            end
-        end
-    end
-
-    if p31 and t1[4].Character then
-        local HumanoidRootPart = t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-        if HumanoidRootPart then
-            HumanoidRootPart.CFrame = p31.CFrame
-            task.wait(0.3)
-
-            local ProximityPrompt = p31:FindFirstChildOfClass("ProximityPrompt")
-
-            if ProximityPrompt then
-                fireproximityprompt(ProximityPrompt)
-                t1[1]:Notify({
-					Title = "Gun System",
-					Content = "Successfully grabbed the gun!",
-					Icon = "check-circle",
-					Duration = 3
-				})
-
-                return true
-            end
-        end
-    end
-
-    return false
-end
-t1[57] = function()
-    while t1[54].AutoGrabEnabled do
-        t1[56]()
-
-        if #t1[54].ActiveGunDrops > 0 and t1[4].Character then
-            local HumanoidRootPart = t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-            if HumanoidRootPart then
-                local v293
-                local n6 = 1e999
-                for _, v in ipairs(t1[54].ActiveGunDrops) do
-                    local Magnitude = (HumanoidRootPart.Position - v.Position).Magnitude
-
-                    if Magnitude < n6 then
-                        n6 = Magnitude
-                        v293 = v
-                    end
-                end
-                if v293 then
-                    HumanoidRootPart.CFrame = v293.CFrame
-                    task.wait(0.3)
-
-                    local ProximityPrompt = v293:FindFirstChildOfClass("ProximityPrompt")
-
-                    if ProximityPrompt then
-                        fireproximityprompt(ProximityPrompt)
-                        task.wait(1)
-                    end
-                end
-            end
-        end
-
-        task.wait(t1[54].GunDropCheckInterval)
-    end
-end
-t1[58] = false
-t1[59] = 0.5
-t1[60] = {
-	"Sheriff",
-	"Hero",
-	"Innocent"
-}
-t1[61] = nil
-t1[61] = function(p32)
-    local v302 = t1[3]:FindFirstChild("GetPlayerData", true):InvokeServer()
-
-    if v302 and v302[p32.Name] then
-        return v302[p32.Name].Role
+    local plain = string.match(text, "^%s*(%d+)%s*$")
+    if plain then
+        return tonumber(plain), nil
     end
 
     return nil
 end
-t1[62] = nil
-t1[63] = function()
-    local Character = t1[4].Character
 
-    if not Character then
-        return false
+-- Exact counter location, confirmed by scanning the real MM2 interface:
+-- MainGUI.Game.CoinBags.Container.<Coin/Candy/BeachBall/Egg/SnowToken>
+--     .CurrencyFrame.Icon.Coins
+local trackedBagContainer = nil
+local lastDeepContainerScan = 0
+
+local function findCoinBagContainer(playerGui)
+    -- Reuse the container while it is still alive.
+    if trackedBagContainer and trackedBagContainer.Parent then
+        return trackedBagContainer
+    end
+    trackedBagContainer = nil
+
+    -- Exact, confirmed path first.
+    local mainGui = playerGui:FindFirstChild("MainGUI")
+    local gameFrame = mainGui and mainGui:FindFirstChild("Game")
+    local coinBags = gameFrame and gameFrame:FindFirstChild("CoinBags")
+    local container = coinBags and coinBags:FindFirstChild("Container")
+    if container then
+        trackedBagContainer = container
+        return container
     end
 
-    if Character:FindFirstChild("Knife") then
-        return true
-    end
-
-    local Knife = t1[4].Backpack:FindFirstChild("Knife")
-
-    if Knife then
-        Knife.Parent = Character
-
-        return true
-    end
-
-    return false
-end
-t1[64] = function()
-    local t10 = {}
-
-    t1[3]:FindFirstChild("GetPlayerData", true):InvokeServer()
-
-    local v304 = t1[4].Character and t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-    if not v304 then
+    -- The game moved/renamed its GUI: look for CoinBags anywhere (throttled).
+    if os.clock() - lastDeepContainerScan < 1.5 then
         return nil
     end
+    lastDeepContainerScan = os.clock()
+    for _, object in ipairs(playerGui:GetDescendants()) do
+        if object.Name == "CoinBags" then
+            local found = object:FindFirstChild("Container") or object
+            trackedBagContainer = found
+            return found
+        end
+    end
+    return nil
+end
 
-    for _, player in ipairs(t1[2]:GetPlayers()) do
-        if player ~= t1[4] and player.Character then
-            local v307 = t1[61](player)
-            local Humanoid = player.Character:FindFirstChild("Humanoid")
-            local HumanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-            local v310 = v307
+local function findCoinBagLabel(playerGui)
+    local container = findCoinBagContainer(playerGui)
+    if not container then return nil end
 
-            if v307 then
-                v310 = Humanoid
-
-                if Humanoid then
-                    v310 = Humanoid.Health > 0
-
-                    if v310 then
-                        v310 = HumanoidRootPart and table.find(t1[60], v307)
-                    end
+    local fallbackLabel = nil
+    for _, bag in ipairs(container:GetChildren()) do
+        if bag:IsA("GuiObject") then
+            local currencyFrame = bag:FindFirstChild("CurrencyFrame")
+            local icon = currencyFrame and currencyFrame:FindFirstChild("Icon")
+            local label = icon and icon:FindFirstChild("Coins")
+            if not label then
+                -- Layout inside the bag changed: search the whole bag.
+                label = bag:FindFirstChild("Coins", true)
+            end
+            if label and label:IsA("TextLabel") then
+                -- Event bags (Candy, BeachBall, ...) are hidden outside
+                -- their events, so prefer the bag that is shown right now.
+                if bag.Visible then
+                    return label
+                end
+                if bag.Name == "Coin" or not fallbackLabel then
+                    fallbackLabel = label
                 end
             end
-
-            if v310 then
-                local insert = table.insert
-                local v312 = v304.Position - HumanoidRootPart.Position
-
-                insert(t10, {
-					Player = player,
-					Distance = v312.Magnitude
-				})
-            end
         end
     end
-
-    table.sort(t10, function(p33, p34)
-        return p33.Distance < p34.Distance
-    end)
-
-    return t10[1] and t10[1].Player or nil
+    return fallbackLabel
 end
-t1[65] = nil
-t1[65] = function(p35)
-    if not p35 or not p35.Character then
-        return false
+
+local function bagShowsFull(label)
+    local icon = label and label.Parent
+    local currencyFrame = icon and icon.Parent
+    local bag = currencyFrame and currencyFrame.Parent
+    local fullLabel = bag and bag:FindFirstChild("Full")
+    if fullLabel and fullLabel:IsA("TextLabel") then
+        return fullLabel.Visible
     end
-
-    local Humanoid = p35.Character:FindFirstChild("Humanoid")
-
-    if not Humanoid or Humanoid.Health <= 0 then
-        return false
-    end
-
-    if not t1[63]() then
-        return false
-    end
-
-    local HumanoidRootPart = p35.Character:FindFirstChild("HumanoidRootPart")
-    local HumanoidRootPart2 = t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-    if HumanoidRootPart and HumanoidRootPart2 then
-        HumanoidRootPart2.CFrame = CFrame.new(HumanoidRootPart.Position + (HumanoidRootPart2.Position - HumanoidRootPart.Position).Unit * 2, HumanoidRootPart.Position)
-    end
-
-    local Knife = t1[4].Character:FindFirstChild("Knife")
-
-    if Knife and Knife:FindFirstChild("Stab") then
-        for _ = 1, 3 do
-            Knife.Stab:FireServer("Down")
-        end
-
-        return true
-    end
-
     return false
 end
-t1[66] = function(...)
-    if t1[58] then
-        return
+
+local announcedBagPath = nil
+local function announceBagLabel(label)
+    local path = label:GetFullName()
+    if path ~= announcedBagPath then
+        announcedBagPath = path
+        print("[MM2 AUTOFARM] coin counter found:", path)
+    end
+end
+
+local function scanBagFromInterface()
+    -- Reuse the label found earlier while it is still on screen.
+    if trackedBagLabel and trackedBagLabel.Parent then
+        local current, capacity = parseBagText(trackedBagLabel)
+        if current then
+            return current, capacity
+        end
+    end
+    trackedBagLabel = nil
+
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return nil end
+
+    -- The exact counter path goes first: it is instant and precise.
+    local exactLabel = findCoinBagLabel(playerGui)
+    if exactLabel then
+        local current, capacity = parseBagText(exactLabel)
+        if current then
+            trackedBagLabel = exactLabel
+            announceBagLabel(exactLabel)
+            return current, capacity
+        end
     end
 
-    t1[58] = true
-    task.spawn(function()
-        while t1[58] do
-            local v435 = t1[64]()
+    -- Generic interface scans (fallback) are throttled to stay lightweight.
+    if os.clock() - lastBagScan < 1.5 then
+        return nil
+    end
+    lastBagScan = os.clock()
 
-            if not v435 then
-                t1[58] = false
-
-                return
+    local bestLabel, bestCurrent, bestCapacity, bestScore = nil, nil, nil, 0
+    for _, object in ipairs(playerGui:GetDescendants()) do
+        local current, capacity = parseBagText(object)
+        if current and object.Visible then
+            local context = labelContext(object)
+            local score = 0
+            if string.find(context, "coin", 1, true) then score += 4 end
+            if string.find(context, "bag", 1, true) then score += 3 end
+            if string.find(context, "candy", 1, true) then score += 2 end
+            if string.find(context, "currency", 1, true) then score += 1 end
+            if object.Name == "Coins" then score += 4 end
+            if capacity == BAG_LIMIT_DEFAULT or capacity == BAG_LIMIT_ELITE then
+                score += 5
             end
 
-            t1[65](v435)
-            task.wait(t1[59])
-        end
-    end)
-end
-t1[67] = function(...)
-    t1[58] = false
-end
-t1[62] = "Default"
-t1[68] = function(...)
-    local v319 = not t1[4].Character
-    if not v319 then
-        v319 = not t1[4].Character:FindFirstChild("Humanoid") or t1[4].Character.Humanoid.Health <= 0
-    end
-    if v319 then
-        return
-    end
-    local ok, result = pcall(function()
-        return t1[3]:FindFirstChild("GetPlayerData", true):InvokeServer()
-    end)
-    local v322 = not ok
-    if not v322 then
-        v322 = not result
-    end
-    if v322 then
-        return
-    end
-    local k2
-    for k, v in pairs(result) do
-        if v.Role == "Murderer" then
-            k2 = t1[2]:FindFirstChild(k)
-
-            break
-        end
-    end
-    local v326 = not k2
-    if not v326 then
-        v326 = not k2.Character
-
-        if not v326 then
-            v326 = not k2.Character:FindFirstChild("Humanoid") or k2.Character.Humanoid.Health <= 0
-        end
-    end
-    if v326 then
-        return
-    end
-    local v327 = t1[4].Character:FindFirstChild("Gun") or t1[4].Backpack:FindFirstChild("Gun")
-    if t1[62] == "Default" and not v327 then
-        return
-    end
-    if v327 and not t1[4].Character:FindFirstChild("Gun") then
-        v327.Parent = t1[4].Character
-    end
-    if t1[62] == "Teleport" then
-        local HumanoidRootPart = k2.Character:FindFirstChild("HumanoidRootPart")
-        local HumanoidRootPart3 = t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-        if HumanoidRootPart and HumanoidRootPart3 then
-            HumanoidRootPart3.CFrame = HumanoidRootPart.CFrame * CFrame.new(0, 0, -4)
-        end
-    end
-    local Gun = t1[4].Character:FindFirstChild("Gun")
-    if Gun and Gun:FindFirstChild("KnifeLocal") then
-        local HumanoidRootPart = k2.Character:FindFirstChild("HumanoidRootPart")
-
-        if HumanoidRootPart then
-            local HumanoidRootPartPosition = HumanoidRootPart.Position
-            local t11 = {
-				[1] = 1,
-				[2] = HumanoidRootPartPosition,
-				[3] = "AH2"
-			}
-
-            Gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(t11))
-        end
-    end
-end
-local v44 = t1[8]:Section({
-	Title = v15("Azure Functions", t1[6].Pumpkin, t1[6].Purple),
-	Icon = "flame",
-	Opened = true
-})
-local v45 = v44:Tab({
-	Title = "ESP",
-	Icon = "eye"
-})
-v45:Section({
-	Title = "Player ESP Settings",
-	TextSize = 18,
-	FontWeight = Enum.FontWeight.SemiBold
-})
-v45:Toggle({
-	Flag = "HighlightESP",
-	Title = "Highlight ESP",
-	Desc = "Enable player highlighting (shows all by default)",
-	Default = true,
-	Callback = function(p36)
-    t1[30] = p36
-
-    if p36 then
-        t1[29] = { "Esp All" }
-    end
-
-    v35()
-end
-})
-v45:Space()
-v45:Dropdown({
-	Flag = "ESPOptions",
-	Title = "Filter ESP",
-	Desc = "Filter which players to highlight",
-	Values = {
-		{
-			Title = "Esp All",
-			Icon = "users"
-		},
-		{
-			Title = "Esp Sheriff",
-			Icon = "shield"
-		},
-		{
-			Title = "Esp Murder",
-			Icon = "knife"
-		},
-		{
-			Title = "Esp Sheriff / Murder",
-			Icon = "target"
-		}
-	},
-	Value = "Esp All",
-	Callback = function(p37)
-    t1[29] = { p37.Title }
-    v35()
-end
-})
-v45:Space()
-v45:Toggle({
-	Flag = "LineESP",
-	Title = "Line ESP (Tracers)",
-	Desc = "Draw lines to players",
-	Default = false,
-	Callback = function(p38)
-    t1[31] = p38
-
-    if not p38 then
-        for _, v in pairs(t1[32]) do
-            v:Remove()
-        end
-
-        t1[32] = {}
-    end
-
-    v35()
-end
-})
-local v46 = v44:Tab({
-	Title = "Auto Farm",
-	Icon = "trending-up"
-})
-local FontWeight = Enum.FontWeight
-v46:Section({
-	Title = "Coin & Candy Collection",
-	TextSize = 18,
-	FontWeight = FontWeight.SemiBold
-})
-v46:Toggle({
-	Flag = "CoinAutofarm",
-	Title = "Coin Autofarm",
-	Desc = "Automatically collect coins from the map",
-	Default = false,
-	Callback = function(p39)
-    t1[9] = p39
-
-    if p39 then
-        t1[14] = {}
-        t1[16] = 0
-        t1[1]:Notify({
-				Title = "Coin Autofarm",
-				Content = "Coin farming started!",
-				Icon = "dollar-sign",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Coin Autofarm",
-			Content = "Coin farming stopped",
-			Icon = "x-circle",
-			Duration = 3
-		})
-end
-})
-v46:Space()
-v46:Toggle({
-	Flag = "CandyAutofarm",
-	Title = "Candy Autofarm",
-	Desc = "Collect Halloween candy for event rewards",
-	Default = false,
-	Callback = function(p40)
-    t1[10] = p40
-
-    if p40 then
-        t1[14] = {}
-        t1[16] = 0
-        t1[1]:Notify({
-				Title = "Candy Autofarm",
-				Content = "Candy farming started!",
-				Icon = "candy",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Candy Autofarm",
-			Content = "Candy farming stopped",
-			Icon = "x-circle",
-			Duration = 3
-		})
-end
-})
-v46:Space()
-v46:Toggle({
-	Flag = "AutoEndRound",
-	Title = "Auto Reset Character",
-	Desc = "Automatically reset character when bag is full",
-	Default = false,
-	Callback = function(p41)
-    t1[11] = p41
-    t1[12] = p41
-    print("[DEBUG] Auto Reset Character toggle changed to:", p41)
-    print("[DEBUG] autoEndRound is now:", t1[11])
-    print("[DEBUG] flingMurdererOnFull is now:", t1[12])
-
-    if p41 then
-        t1[1]:Notify({
-				Title = "Auto Reset Character",
-				Content = "Will reset character at " .. t1[18] .. " candy",
-				Icon = "refresh-cw",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Auto Reset Character",
-			Content = "Auto reset character disabled",
-			Icon = "x-circle",
-			Duration = 3
-		})
-end
-})
-v46:Space()
-v46:Toggle({
-	Flag = "AutoFlingMurderer",
-	Title = "Auto Fling Murderer",
-	Desc = "Automatically fling murderer when bag is full",
-	Default = false,
-	Callback = function(p42)
-    t1[13] = p42
-    print("[DEBUG] Auto Fling Murderer toggle changed to:", p42)
-
-    if p42 then
-        t1[1]:Notify({
-				Title = "Auto Fling Murderer",
-				Content = "Will fling murderer at " .. t1[18] .. " candy",
-				Icon = "zap",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Auto Fling Murderer",
-			Content = "Auto fling murderer disabled",
-			Icon = "x-circle",
-			Duration = 3
-		})
-end
-})
-local t12 = {
-	Min = 5,
-	Max = 50,
-	Default = 25
-}
-v46:Space()
-v46:Slider({
-	Flag = "FlySpeed",
-	Title = "Autofarm Speed",
-	Desc = "Adjust collection speed",
-	Step = 1,
-	Value = t12,
-	Callback = function(p43)
-    t1[15] = p43
-end
-})
-v46:Space()
-local Medium = Enum.FontWeight.Medium
-v46:Section({
-	Title = "⚠\239\184\143 Recommended: 25, higher will probably get you kicked",
-	TextSize = 14,
-	TextTransparency = 0.3,
-	FontWeight = Medium
-})
-v46:Space()
-v46:Button({
-	Title = "Reset Counter",
-	Icon = "refresh-cw",
-	Justify = "Center",
-	Callback = function()
-    t1[16] = 0
-    t1[14] = {}
-    t1[17] = 0
-    t1[1]:Notify({
-			Title = "Counter Reset",
-			Content = "Collection counter reset!",
-			Icon = "check-circle",
-			Duration = 3
-		})
-end
-})
-v46:Space()
-local Blood = t1[6].Blood
-v46:Button({
-	Title = "Fling Murderer",
-	Icon = "zap",
-	Color = Blood,
-	Justify = "Center",
-	Callback = function()
-    v36()
-end
-})
-v46:Space()
-local Midnight = t1[6].Midnight
-v46:Button({
-	Title = "Enable Anti-AFK",
-	Icon = "moon",
-	Color = Midnight,
-	Justify = "Center",
-	Callback = function()
-    if pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))()
-    end) then
-        t1[1]:Notify({
-				Title = "Anti-AFK",
-				Content = "Anti-AFK enabled!",
-				Icon = "check-circle",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Anti-AFK Error",
-			Content = "Failed to load Anti-AFK!",
-			Icon = "x-circle",
-			Duration = 5
-		})
-end
-})
-local v52 = v44:Tab({
-	Title = "Character",
-	Icon = "user"
-})
-v52:Section({
-	Title = "Movement Settings",
-	TextSize = 18,
-	FontWeight = Enum.FontWeight.SemiBold
-})
-v52:Slider({
-	Flag = "WalkSpeed",
-	Title = "Walk Speed",
-	Desc = "Adjust your walking speed",
-	Step = 1,
-	Value = {
-		Min = 0,
-		Max = 200,
-		Default = 16
-	},
-	Callback = function(p44)
-    t1[38].WalkSpeed.Value = p44
-    t1[45]()
-end
-})
-v52:Space()
-v52:Toggle({
-	Flag = "BlockWalkSpeed",
-	Title = "Lock Walk Speed",
-	Desc = "Prevent walkspeed changes",
-	Default = false,
-	Callback = function(p45)
-    t1[38].WalkSpeed.Locked = p45
-end
-})
-v52:Space()
-v52:Slider({
-	Flag = "JumpPower",
-	Title = "Jump Power",
-	Desc = "Adjust your jump height",
-	Step = 1,
-	Value = {
-		Min = 0,
-		Max = 200,
-		Default = 50
-	},
-	Callback = function(p46)
-    t1[38].JumpPower.Value = p46
-    t1[45]()
-end
-})
-local Space = v52.Space
-local t13 = {
-	Flag = "BlockJumpPower",
-	Title = "Lock Jump Power",
-	Desc = "Prevent jump power changes",
-	Default = false,
-	Callback = function(p47)
-    t1[38].JumpPower.Locked = p47
-end
-}
-Space(v52)
-v52:Toggle(t13)
-v52:Space()
-v52:Button({
-	Title = "Reset to Default",
-	Icon = "rotate-ccw",
-	Color = t1[6].Orange,
-	Justify = "Center",
-	Callback = function()
-    t1[38].WalkSpeed.Value = 16
-    t1[38].JumpPower.Value = 50
-    t1[45]()
-    t1[1]:Notify({
-			Title = "Character Reset",
-			Content = "Settings reset to default!",
-			Icon = "check-circle",
-			Duration = 3
-		})
-end
-})
-local v55 = v44:Tab({
-	Title = "Teleport",
-	Icon = "move"
-})
-local SemiBold = Enum.FontWeight.SemiBold
-v55:Section({
-	Title = "Player Teleportation",
-	TextSize = 18,
-	FontWeight = SemiBold
-})
-t1[69] = nil
-t1[70] = nil
-t1[71] = function()
-    local t14 = {}
-
-    for _, player in pairs(t1[2]:GetPlayers()) do
-        if player ~= t1[4] then
-            table.insert(t14, {
-				Title = player.Name,
-				Icon = "user"
-			})
+            -- Plain numbers only count inside coin/bag related frames,
+            -- otherwise timers and other counters would match too.
+            if (capacity or score >= 3) and score > bestScore then
+                bestLabel = object
+                bestCurrent = current
+                bestCapacity = capacity
+                bestScore = score
+            end
         end
     end
 
-    return t14
+    if bestLabel then
+        trackedBagLabel = bestLabel
+        announceBagLabel(bestLabel)
+        return bestCurrent, bestCapacity
+    end
+
+    return nil
 end
-local v57 = t1[71]()
-local v58 = v55:Dropdown({
-	Flag = "TeleportPlayer",
-	Title = "Select Player",
-	Desc = "Choose a player to teleport to",
-	Values = v57,
-	Callback = function(p48)
-    local p48Title = p48.Title
 
-    t1[69] = t1[2]:FindFirstChild(p48Title)
-end
-})
-local Space2 = v55.Space
-t1[70] = v58
-Space2(v55)
-local Purple = t1[6].Purple
-v55:Button({
-	Title = "Teleport to Player",
-	Icon = "zap",
-	Color = Purple,
-	Justify = "Center",
-	Callback = function()
-    if t1[69] and t1[69].Character then
-        local HumanoidRootPart = t1[69].Character:FindFirstChild("HumanoidRootPart")
-        local HumanoidRootPart4 = t1[4].Character:FindFirstChild("HumanoidRootPart")
+local lastSeenBagCount = nil
+local lastBagMissWarn = 0
 
-        if HumanoidRootPart and HumanoidRootPart4 then
-            HumanoidRootPart4.CFrame = HumanoidRootPart.CFrame
-
-            local v353 = t1[1]
-            local Name = t1[69].Name
-
-            v353:Notify({
-					Title = "Teleport Success",
-					Content = "Teleported to " .. Name,
-					Icon = "check-circle",
-					Duration = 3
-				})
-
-            return
+local function updateBagFromInterface()
+    local current, capacity = scanBagFromInterface()
+    if current then
+        -- FARMED stat comes straight from the game's own bag counter: every
+        -- increase of the interface number is added to the session total.
+        if lastSeenBagCount ~= nil and current > lastSeenBagCount then
+            state.farmed += current - lastSeenBagCount
+        end
+        lastSeenBagCount = current
+        state.bagFound = true
+        state.bagCount = current
+        if capacity == BAG_LIMIT_DEFAULT or capacity == BAG_LIMIT_ELITE then
+            state.bagLimit = capacity
+        end
+        -- The game shows "Full!" on the bag when it is packed - trust it.
+        if bagShowsFull(trackedBagLabel) then
+            state.bagCount = math.max(state.bagCount, state.bagLimit)
         end
     else
-        t1[1]:Notify({
-				Title = "Teleport Error",
-				Content = "Target not found!",
-				Icon = "x-circle",
-				Duration = 3
-			})
-    end
-end
-})
-v55:Space()
-v55:Button({
-	Title = "Refresh Player List",
-	Icon = "refresh-cw",
-	Justify = "Center",
-	Callback = function()
-    t1[70]:Refresh(t1[71]())
-    t1[1]:Notify({
-			Title = "Players Updated",
-			Content = "Player list refreshed!",
-			Icon = "check-circle",
-			Duration = 2
-		})
-end
-})
-v55:Space({
-	Columns = 2
-})
-v55:Section({
-	Title = "Role Teleportation",
-	TextSize = 18,
-	FontWeight = Enum.FontWeight.SemiBold
-})
-local Blood2 = t1[6].Blood
-v55:Button({
-	Title = "Teleport to Murderer",
-	Icon = "knife",
-	Color = Blood2,
-	Justify = "Center",
-	Callback = function()
-    local v357
-    for _, player in ipairs(t1[2]:GetPlayers()) do
-        if not (player ~= t1[4] and player.Character) then
-            continue
-        end
-
-        if player.Character:FindFirstChild("Knife") then
-            v357 = player
-
-            break
-        end
-
-        local Backpack = player:FindFirstChild("Backpack")
-
-        if Backpack and Backpack:FindFirstChild("Knife") then
-            v357 = player
-
-            break
-        end
-    end
-    if v357 and v357.Character then
-        local HumanoidRootPart = v357.Character:FindFirstChild("HumanoidRootPart")
-        local HumanoidRootPart5 = t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-        if HumanoidRootPart and HumanoidRootPart5 then
-            HumanoidRootPart5.CFrame = HumanoidRootPart.CFrame
-            t1[1]:Notify({
-					Title = "Teleport Success",
-					Content = "Teleported to murderer: " .. v357.Name,
-					Icon = "check-circle",
-					Duration = 3
-				})
-
-            return
-        end
-    else
-        t1[1]:Notify({
-				Title = "Teleport Error",
-				Content = "No murderer found!",
-				Icon = "x-circle",
-				Duration = 3
-			})
-    end
-end
-})
-v55:Space()
-local Toxic = t1[6].Toxic
-v55:Button({
-	Title = "Teleport to Sheriff",
-	Icon = "shield",
-	Color = Toxic,
-	Justify = "Center",
-	Callback = function()
-    local v363
-    for _, player in ipairs(t1[2]:GetPlayers()) do
-        if not (player ~= t1[4] and player.Character) then
-            continue
-        end
-
-        if player.Character:FindFirstChild("Gun") then
-            v363 = player
-
-            break
-        end
-
-        local Backpack = player:FindFirstChild("Backpack")
-
-        if Backpack and Backpack:FindFirstChild("Gun") then
-            v363 = player
-
-            break
-        end
-    end
-    if v363 and v363.Character then
-        local HumanoidRootPart = v363.Character:FindFirstChild("HumanoidRootPart")
-        local HumanoidRootPart6 = t1[4].Character:FindFirstChild("HumanoidRootPart")
-
-        if HumanoidRootPart and HumanoidRootPart6 then
-            HumanoidRootPart6.CFrame = HumanoidRootPart.CFrame
-
-            local v369 = t1[1]
-            local Name = v363.Name
-
-            v369:Notify({
-					Title = "Teleport Success",
-					Content = "Teleported to sheriff: " .. Name,
-					Icon = "check-circle",
-					Duration = 3
-				})
-
-            return
-        end
-    else
-        t1[1]:Notify({
-				Title = "Teleport Error",
-				Content = "No sheriff found!",
-				Icon = "x-circle",
-				Duration = 3
-			})
-    end
-end
-})
-local v63 = v44:Tab({
-	Title = "Weapon Spawner",
-	Icon = "sword"
-})
-local SemiBold2 = Enum.FontWeight.SemiBold
-v63:Section({
-	Title = "Spawn Weapons",
-	TextSize = 18,
-	FontWeight = SemiBold2
-})
-t1[72] = nil
-t1[72] = ""
-v63:Input({
-	Flag = "WeaponName",
-	Title = "Weapon Name",
-	Desc = "Enter the name of the weapon",
-	Placeholder = "e.g., CandyBlade, Raygun",
-	Callback = function(p49)
-    t1[72] = p49
-end
-})
-v63:Space()
-local Orange = t1[6].Orange
-v63:Button({
-	Title = "Spawn Weapon",
-	Icon = "sparkles",
-	Color = Orange,
-	Justify = "Center",
-	Callback = function()
-    if t1[72] ~= "" then
-        v42(t1[72])
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Error",
-			Content = "Please enter a weapon name!",
-			Icon = "x-circle",
-			Duration = 3
-		})
-end
-})
-v63:Space({
-	Columns = 2
-})
-local FontWeight2 = Enum.FontWeight
-v63:Section({
-	Title = "Quick Spawn Godlies",
-	TextSize = 16,
-	FontWeight = FontWeight2.SemiBold
-})
-local Toxic2 = t1[6].Toxic
-v63:Button({
-	Title = "Spawn Raygun (Battlepass)",
-	Icon = "zap",
-	Color = Toxic2,
-	Callback = function()
-    v42("Raygun")
-end
-})
-v63:Space()
-local Button = v63.Button
-local Blood3 = t1[6].Blood
-Button(v63, {
-	Title = "Spawn XenoKnife",
-	Icon = "knife",
-	Color = Blood3,
-	Callback = function()
-    v42("XenoKnife")
-end
-})
-v63:Space()
-local DarkPurple = t1[6].DarkPurple
-v63:Button({
-	Title = "Spawn XenoGun",
-	Icon = "crosshair",
-	Color = DarkPurple,
-	Callback = function()
-    v42("XenoGun")
-end
-})
-local v71 = v44:Tab({
-	Title = "Weapon Dupe",
-	Icon = "copy"
-})
-v71:Section({
-	Title = "Single Weapon Duplication",
-	TextSize = 18,
-	FontWeight = Enum.FontWeight.SemiBold
-})
-v71:Input({
-	Flag = "DupeWeaponName",
-	Title = "Weapon Name",
-	Desc = "Enter weapon to duplicate",
-	Placeholder = "e.g., Lightbringer",
-	Callback = function(p50)
-    t1[33] = p50
-end
-})
-v71:Space()
-v71:Input({
-	Flag = "DupeAmount",
-	Title = "Dupe Amount",
-	Desc = "How many times to duplicate",
-	Placeholder = "e.g., 5",
-	Value = "1",
-	Callback = function(p51)
-    t1[34] = tonumber(p51) or 1
-end
-})
-v71:Space()
-local DarkOrange = t1[6].DarkOrange
-v71:Button({
-	Title = "Start Duplication",
-	Icon = "layers",
-	Color = DarkOrange,
-	Justify = "Center",
-	Callback = function()
-    if t1[33] == "" then
-        t1[1]:Notify({
-				Title = "Weapon Dupe Error",
-				Content = "Please enter a weapon name!",
-				Icon = "x-circle",
-				Duration = 5
-			})
-
-        return
-    end
-
-    local v374 = t1[1]
-    local v375 = t1[33]
-    local Notify = v374.Notify
-    local v377 = "Duplicating " .. v375 .. " " .. t1[34] .. " times..."
-
-    Notify(v374, {
-			Title = "Weapon Dupe",
-			Content = v377,
-			Icon = "loader",
-			Duration = 3
-		})
-
-    for _ = 1, t1[34] do
-        v41()
-    end
-
-    local v379 = t1[1]
-    local v380 = "Successfully duplicated " .. t1[33] .. "!"
-
-    v379:Notify({
-			Title = "Dupe Complete",
-			Content = v380,
-			Icon = "check-circle",
-			Duration = 5
-		})
-end
-})
-v71:Space({
-	Columns = 3
-})
-local FontWeight3 = Enum.FontWeight
-local Section = v71.Section
-local SemiBold3 = FontWeight3.SemiBold
-Section(v71, {
-	Title = "Inventory Duplication",
-	TextSize = 18,
-	FontWeight = SemiBold3
-})
-local Witch = t1[6].Witch
-v71:Button({
-	Title = "Dupe Entire Inventory",
-	Icon = "package",
-	Color = Witch,
-	Justify = "Center",
-	Callback = function()
-    t1[1]:Notify({
-			Title = "Inventory Dupe",
-			Content = "Duplicating entire inventory...",
-			Icon = "loader",
-			Duration = 3
-		})
-    t1[50]()
-    t1[1]:Notify({
-			Title = "Inventory Dupe Complete",
-			Content = "Successfully duplicated inventory!",
-			Icon = "check-circle",
-			Duration = 5
-		})
-end
-})
-local v77 = v44:Tab({
-	Title = "Visual Weapons",
-	Icon = "eye-off"
-})
-local SemiBold4 = Enum.FontWeight.SemiBold
-v77:Section({
-	Title = "Change Weapon Appearance",
-	TextSize = 18,
-	FontWeight = SemiBold4
-})
-v77:Input({
-	Flag = "FromWeapon",
-	Title = "Weapon to Replace",
-	Desc = "Current weapon you have",
-	Placeholder = "e.g., Blossom",
-	Callback = function(p52)
-    t1[35] = p52
-end
-})
-v77:Space()
-v77:Input({
-	Flag = "ToWeapon",
-	Title = "Weapon to Receive",
-	Desc = "Weapon appearance you want",
-	Placeholder = "e.g., Chroma",
-	Callback = function(p53)
-    t1[36] = p53
-end
-})
-v77:Space()
-local Purple2 = t1[6].Purple
-v77:Button({
-	Title = "Change Visual",
-	Icon = "wand-2",
-	Color = Purple2,
-	Justify = "Center",
-	Callback = function()
-    if t1[35] == "" or t1[36] == "" then
-        t1[1]:Notify({
-				Title = "Visual Weapons Error",
-				Content = "Please enter both weapon names!",
-				Icon = "x-circle",
-				Duration = 5
-			})
-
-        return
-    end
-
-    if not pcall(function()
-        local Item = require(game:GetService("ReplicatedStorage").Database.Sync.Item)
-        local t15 = {}
-        local t16 = {}
-
-        for k, _ in pairs(Item) do
-            local v441 = k
-
-            if t1[51](v441, t1[35]) then
-                table.insert(t15, v441)
-            end
-
-            if t1[51](v441, t1[36]) then
-                table.insert(t16, v441)
-            end
-        end
-
-        if #t15 > 0 and #t16 > 0 then
-            for _, v in ipairs(t15) do
-                for _, v4 in ipairs(t16) do
-                    Item[v] = {}
-
-                    for k, v5 in pairs(Item[v4]) do
-                        Item[v][k] = v5
-                    end
-
-                    game:GetService("ReplicatedStorage").Remotes.Inventory.Equip:FireServer(v4)
-                end
-            end
-
-            t1[1]:Notify({
-					Title = "Visual Success",
-					Content = "Weapon visual changed!",
-					Icon = "check-circle",
-					Duration = 5
-				})
-
-            return
-        end
-
-        t1[1]:Notify({
-				Title = "Visual Error",
-				Content = "Weapon not found!",
-				Icon = "x-circle",
-				Duration = 5
-			})
-    end) then
-        t1[1]:Notify({
-				Title = "Visual Error",
-				Content = "Failed to change visual!",
-				Icon = "x-circle",
-				Duration = 5
-			})
-    end
-end
-})
-local v80 = v44:Tab({
-	Title = "Trade Scam",
-	Icon = "shield-alert"
-})
-v80:Section({
-	Title = "Visual Trade Protection",
-	TextSize = 18,
-	FontWeight = Enum.FontWeight.SemiBold
-})
-t1[73] = false
-v80:Toggle({
-	Flag = "VisualTrade",
-	Title = "Enable Visual Trade",
-	Desc = "Make items in trade appear visual only",
-	Default = false,
-	Callback = function(p54)
-    t1[73] = p54
-    t1[1]:Notify({
-			Title = "Visual Trade",
-			Content = not p54 and "Visual Trade Disabled!" or "Visual Trade Enabled!",
-			Icon = not p54 and "shield-off" or "shield-check",
-			Duration = 3
-		})
-end
-})
-v80:Space()
-local Blood4 = t1[6].Blood
-v80:Button({
-	Title = "Activate Visual Trade",
-	Icon = "alert-triangle",
-	Color = Blood4,
-	Justify = "Center",
-	Callback = function()
-    if not t1[73] then
-        t1[1]:Notify({
-				Title = "Error",
-				Content = "Enable Visual Trade first!",
-				Icon = "x-circle",
-				Duration = 5
-			})
-
-        return
-    end
-
-    t1[52]()
-end
-})
-local v82 = v44:Tab({
-	Title = "Utilities",
-	Icon = "wrench"
-})
-local SemiBold5 = Enum.FontWeight.SemiBold
-v82:Section({
-	Title = "Server Utilities",
-	TextSize = 18,
-	FontWeight = SemiBold5
-})
-local Midnight2 = t1[6].Midnight
-v82:Button({
-	Title = "Enable Anti-AFK",
-	Icon = "moon",
-	Color = Midnight2,
-	Justify = "Center",
-	Callback = function()
-    if pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))()
-    end) then
-        t1[1]:Notify({
-				Title = "Anti-AFK",
-				Content = "Anti-AFK enabled!",
-				Icon = "check-circle",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Anti-AFK Error",
-			Content = "Failed to load Anti-AFK!",
-			Icon = "x-circle",
-			Duration = 5
-		})
-end
-})
-v82:Space()
-v82:Button({
-	Title = "Server Lagger",
-	Icon = "zap",
-	Color = t1[6].Blood,
-	Justify = "Center",
-	Callback = function()
-    t1[1]:Notify({
-			Title = "Server Lagger",
-			Content = "Lagging server... Risk of disconnect!",
-			Icon = "alert-triangle",
-			Duration = 5
-		})
-    pcall(function()
-        local GetSyncData = game:GetService("ReplicatedStorage").GetSyncData
-        local InvokeServer = GetSyncData.InvokeServer
-        local spawn = task.spawn
-        local n7 = 0
-        while true do
-            for _ = 1, 1 do
-                spawn(InvokeServer, GetSyncData)
-            end
-
-            n7 += 1
-
-            if n7 == 3 then
-                wait(0)
-            end
-        end
-    end)
-end
-})
-local v85 = v44:Tab({
-	Title = "Innocent",
-	Icon = "user-check"
-})
-local SemiBold6 = Enum.FontWeight.SemiBold
-v85:Section({
-	Title = "Gun System",
-	TextSize = 18,
-	FontWeight = SemiBold6
-})
-v85:Toggle({
-	Flag = "AutoGrabGun",
-	Title = "Auto Grab Gun",
-	Desc = "Automatically collect dropped gun",
-	Default = false,
-	Callback = function(p55)
-    t1[54].AutoGrabEnabled = p55
-
-    if p55 then
-        coroutine.wrap(t1[57])()
-        t1[1]:Notify({
-				Title = "Auto Grab Gun",
-				Content = "Auto grab enabled!",
-				Icon = "check-circle",
-				Duration = 3
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Auto Grab Gun",
-			Content = "Auto grab disabled",
-			Icon = "x-circle",
-			Duration = 3
-		})
-end
-})
-v85:Space()
-local Toxic3 = t1[6].Toxic
-v85:Button({
-	Title = "Grab Gun Manually",
-	Icon = "hand",
-	Color = Toxic3,
-	Justify = "Center",
-	Callback = function()
-    v43()
-end
-})
-v85:Space()
-v85:Toggle({
-	Flag = "NotifyGunDrop",
-	Title = "Notify Gun Drop",
-	Desc = "Get notified when gun drops",
-	Default = true,
-	Callback = function(p56)
-    t1[54].NotifyGunDrop = p56
-end
-})
-local v88 = v44:Tab({
-	Title = "Murderer",
-	Icon = "knife"
-})
-local _Enum = Enum
-v88:Section({
-	Title = "Kill Functions",
-	TextSize = 18,
-	FontWeight = _Enum.FontWeight.SemiBold
-})
-v88:Toggle({
-	Flag = "KillAll",
-	Title = "Kill All Players",
-	Desc = "Automatically attack nearby targets",
-	Default = false,
-	Callback = function(p57)
-    if p57 then
-        t1[66]()
-
-        local t17 = {
-				Title = "Kill All",
-				Content = "Attack sequence started!",
-				Icon = "skull",
-				Duration = 2
-			}
-
-        t1[1]:Notify(t17)
-
-        return
-    end
-
-    t1[67]()
-    t1[1]:Notify({
-			Title = "Kill All",
-			Content = "Attack stopped",
-			Icon = "x-circle",
-			Duration = 2
-		})
-end
-})
-local t18 = {
-	Min = 0.1,
-	Max = 2,
-	Default = 0.5
-}
-v88:Space()
-v88:Slider({
-	Flag = "AttackDelay",
-	Title = "Attack Delay",
-	Desc = "Time between attacks",
-	Step = 0.1,
-	Value = t18,
-	Callback = function(p58)
-    t1[59] = p58
-end
-})
-v88:Space()
-local Blood5 = t1[6].Blood
-v88:Button({
-	Title = "Equip Knife",
-	Icon = "knife",
-	Color = Blood5,
-	Justify = "Center",
-	Callback = function()
-    if t1[63]() then
-        t1[1]:Notify({
-				Title = "Knife Equipped",
-				Content = "Knife is ready!",
-				Icon = "check-circle",
-				Duration = 2
-			})
-
-        return
-    end
-
-    t1[1]:Notify({
-			Title = "Error",
-			Content = "No knife found!",
-			Icon = "x-circle",
-			Duration = 2
-		})
-end
-})
-local v92 = v44:Tab({
-	Title = "Sheriff",
-	Icon = "shield"
-})
-local FontWeight4 = Enum.FontWeight
-local Section2 = v92.Section
-local SemiBold7 = FontWeight4.SemiBold
-local t19 = {
-	Title = "Default",
-	Icon = "target"
-}
-local t20 = {
-	Title = "Teleport",
-	Icon = "zap"
-}
-Section2(v92, {
-	Title = "Shooting Functions",
-	TextSize = 18,
-	FontWeight = SemiBold7
-})
-v92:Dropdown({
-	Flag = "ShotType",
-	Title = "Shot Type",
-	Desc = "Choose shooting method",
-	Values = {
-		t19,
-		t20
-	},
-	Value = "Default",
-	Callback = function(p59)
-    t1[62] = p59.Title
-
-    local p59Title = p59.Title
-
-    t1[1]:Notify({
-			Title = "Shot Type",
-			Content = "Set to: " .. p59Title,
-			Icon = "check-circle",
-			Duration = 2
-		})
-end
-})
-v92:Space()
-local Toxic4 = t1[6].Toxic
-v92:Button({
-	Title = "Shoot Murderer",
-	Icon = "crosshair",
-	Color = Toxic4,
-	Justify = "Center",
-	Callback = function()
-    t1[68]()
-end
-})
-local v99 = v44:Tab({
-	Title = "Settings",
-	Icon = "settings"
-})
-v99:Section({
-	Title = "GUI Settings",
-	TextSize = 18,
-	FontWeight = Enum.FontWeight.SemiBold
-})
-v99:Keybind({
-	Flag = "GUIKeybind",
-	Title = "GUI Toggle Key",
-	Desc = "Press to open/close GUI",
-	Value = "G",
-	Callback = function(p60)
-    local v392 = Enum.KeyCode[p60]
-
-    t1[8]:SetToggleKey(v392)
-
-    local t21 = {
-			Title = "Keybind Set",
-			Content = "GUI toggle key: " .. p60,
-			Icon = "keyboard",
-			Duration = 3
-		}
-
-    t1[1]:Notify(t21)
-end
-})
-v99:Space({
-	Columns = 2
-})
-local SemiBold8 = Enum.FontWeight.SemiBold
-v99:Section({
-	Title = "Config Management",
-	TextSize = 18,
-	FontWeight = SemiBold8
-})
-t1[74] = "default"
-t1[75] = t1[8].ConfigManager
-t1[76] = v99:Input({
-	Flag = "ConfigName",
-	Title = "Config Name",
-	Desc = "Name for your configuration",
-	Icon = "file",
-	Value = t1[74],
-	Callback = function(p61)
-    t1[74] = p61
-end
-})
-v99:Space()
-local v101 = t1[75]:AllConfigs()
-local v102 = table.find(v101, t1[74]) and t1[74]
-v99:Dropdown({
-	Flag = "ConfigSelect",
-	Title = "Load Config",
-	Desc = "Select existing configuration",
-	Values = v101,
-	Value = v102 or nil,
-	Callback = function(p62)
-    t1[74] = p62
-    t1[76]:Set(p62)
-end
-})
-v99:Space()
-local Toxic5 = t1[6].Toxic
-v99:Button({
-	Title = "Save Config",
-	Icon = "save",
-	Color = Toxic5,
-	Justify = "Center",
-	Callback = function()
-    t1[8].CurrentConfig = t1[75]:CreateConfig(t1[74])
-
-    if t1[8].CurrentConfig:Save() then
-        t1[1]:Notify({
-				Title = "Config Saved",
-				Content = "Saved as '" .. t1[74] .. "'",
-				Icon = "check",
-				Duration = 3
-			})
-    end
-end
-})
-v99:Space()
-local Purple3 = t1[6].Purple
-v99:Button({
-	Title = "Load Config",
-	Icon = "upload",
-	Color = Purple3,
-	Justify = "Center",
-	Callback = function()
-    t1[8].CurrentConfig = t1[75]:CreateConfig(t1[74])
-
-    if t1[8].CurrentConfig:Load() then
-        t1[1]:Notify({
-				Title = "Config Loaded",
-				Content = "Loaded '" .. t1[74] .. "'",
-				Icon = "refresh-cw",
-				Duration = 3
-			})
-    end
-end
-})
-local v105 = v44:Tab({
-	Title = "Info & Socials",
-	Icon = "info"
-})
-local Bold = Enum.FontWeight.Bold
-v105:Section({
-	Title = "Azure Hub",
-	TextSize = 20,
-	FontWeight = Bold
-})
-v105:Space()
-local FontWeight5 = Enum.FontWeight
-local Section3 = v105.Section
-local Medium2 = FontWeight5.Medium
-Section3(v105, {
-	Title = "Enhanced MM2 script with comprehensive features including ESP, auto-farming, weapon duplication, role-specific functions, and much more! Perfect for Murder Mystery 2 players looking for an edge.",
-	TextSize = 16,
-	TextTransparency = 0.3,
-	FontWeight = Medium2
-})
-v105:Space({
-	Columns = 3
-})
-local SemiBold9 = Enum.FontWeight.SemiBold
-v105:Section({
-	Title = "Features",
-	TextSize = 18,
-	FontWeight = SemiBold9
-})
-v105:Space()
-local Medium3 = Enum.FontWeight.Medium
-v105:Section({
-	Title = "Player ESP • Auto Farm • Character Mods • Teleportation • Weapon Spawner • Weapon Duplication • Visual Weapons • Trade Scam • Role Functions • Anti-AFK • Server Utilities",
-	TextSize = 15,
-	TextTransparency = 0.4,
-	FontWeight = Medium3
-})
-v105:Space({
-	Columns = 3
-})
-local _Enum2 = Enum
-local Section4 = v105.Section
-local SemiBold10 = _Enum2.FontWeight.SemiBold
-Section4(v105, {
-	Title = "Community & Support",
-	TextSize = 18,
-	FontWeight = SemiBold10
-})
-v105:Button({
-	Title = "Copy Discord Invite",
-	Icon = "message-circle",
-	Color = t1[6].DarkPurple,
-	Justify = "Center",
-	Callback = function()
-    setclipboard("https://discord.gg/8pSzTfy46B")
-    t1[1]:Notify({
-			Title = "Discord",
-			Content = "Invite copied to clipboard!",
-			Icon = "check-circle",
-			Duration = 3
-		})
-end
-})
-v105:Space()
-local Blood6 = t1[6].Blood
-v105:Button({
-	Title = "YouTube Channel",
-	Icon = "youtube",
-	Color = Blood6,
-	Justify = "Center",
-	Callback = function()
-    setclipboard("https://www.youtube.com/@AzuraDev157")
-    t1[1]:Notify({
-			Title = "YouTube",
-			Content = "Channel link copied!",
-			Icon = "check-circle",
-			Duration = 3
-		})
-end
-})
-v105:Space()
-local Pumpkin = t1[6].Pumpkin
-v105:Button({
-	Title = "TikTok Profile",
-	Icon = "music",
-	Color = Pumpkin,
-	Justify = "Center",
-	Callback = function()
-    setclipboard("http://tiktok.com/@novaxe.script")
-    t1[1]:Notify({
-			Title = "TikTok",
-			Content = "Profile link copied!",
-			Icon = "check-circle",
-			Duration = 3
-		})
-end
-})
-v35()
-RunService.RenderStepped:Connect(function()
-    if not t1[31] then
-        return
-    end
-
-    for k, v in pairs(t1[32]) do
-        local v398 = k
-
-        if v398.Character and v398.Character:FindFirstChild("HumanoidRootPart") then
-            local HumanoidRootPart = v398.Character.HumanoidRootPart
-            local v400, v401 = workspace.CurrentCamera:WorldToViewportPoint(HumanoidRootPart.Position)
-            local ViewportSize = workspace.CurrentCamera.ViewportSize
-
-            if v401 then
-                v.From = Vector2.new(ViewportSize.X / 2, ViewportSize.Y)
-                v.To = Vector2.new(v400.X, v400.Y)
-                v.Visible = true
-            else
-                v.Visible = false
-            end
-        else
-            v.Visible = false
-        end
-    end
-end)
-local function v117(p63)
-    p63.CharacterAdded:Connect(function()
-        local Backpack = p63:WaitForChild("Backpack")
-
-        Backpack.ChildAdded:Connect(v35)
-        Backpack.ChildRemoved:Connect(v35)
-        v35()
-    end)
-
-    if p63.Character then
-        local Backpack = p63:FindFirstChild("Backpack")
-
-        if Backpack then
-            Backpack.ChildAdded:Connect(v35)
-            Backpack.ChildRemoved:Connect(v35)
+        -- Fallback while the interface counter is not visible.
+        state.bagFound = false
+        state.bagCount = math.max(0, state.farmed - bagStartFarmed)
+        if os.clock() - lastBagMissWarn >= 5 then
+            lastBagMissWarn = os.clock()
+            warn("[MM2 AUTOFARM] coin counter GUI not found (open F9 console and share this log)")
         end
     end
 end
-for _, player in ipairs(t1[2]:GetPlayers()) do
-    v117(player)
-end
-t1[2].PlayerAdded:Connect(v117)
-t1[2].PlayerRemoving:Connect(function(player)
-    if player == t1[4] then
-        for _, v in pairs(t1[32]) do
-            if v then
-                v:Remove()
-            end
-        end
 
-        t1[32] = {}
-    end
-end)
-task.spawn(function(...)
-    if not t1[4].Character then
-        t1[4].CharacterAdded:Wait()
-    end
-
-    t1[56]()
-
-    if t1[54].AutoGrabEnabled then
-        coroutine.wrap(t1[57])()
-    end
-end)
-t1[8]:SetToggleKey(Enum.KeyCode.G)
-t1[8].CurrentConfig = t1[8].ConfigManager:CreateConfig("default")
-t1[8].CurrentConfig:Save()
-t1[1]:Notify({
-	Title = v15("Azure Hub Loaded!", t1[6].Pumpkin, t1[6].Purple),
-	Content = "Welcome to the Halloween Edition! Press G to toggle GUI.",
-	Icon = "skull",
-	Duration = 5
-})
+-- ELITE check: gamepass owners farm 10 more coins per round (50 total).
 task.spawn(function()
-    task.wait(5)
-    setclipboard("https://discord.gg/8pSzTfy46B")
-    t1[1]:Notify({
-		Title = "Discord Copied!",
-		Content = "Join our community! Link copied to clipboard.",
-		Icon = "message-circle",
-		Duration = 4
-	})
+    local ok, ownsElite = pcall(function()
+        return MarketplaceService:UserOwnsGamePassAsync(player.UserId, ELITE_GAMEPASS_ID)
+    end)
+    if ok and ownsElite and state.bagLimit < BAG_LIMIT_ELITE then
+        state.bagLimit = BAG_LIMIT_ELITE
+    end
 end)
+
+local function stopAutofarmOnDeath(character)
+    bagKillTriggered = false
+    bagStartFarmed = state.farmed
+    if state.autofarm then
+        state.farmPaused = true
+        state.pauseReason = "RESPAWN"
+    end
+    local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 8)
+    if not humanoid then return end
+
+    connect(humanoid.Died, function()
+        currentTarget = nil
+        state.farmPaused = state.autofarm
+        state.pauseReason = state.autofarm and "RESPAWN" or ""
+        restoreCharacter()
+    end)
+end
+
+if player.Character then
+    task.defer(stopAutofarmOnDeath, player.Character)
+end
+connect(player.CharacterAdded, stopAutofarmOnDeath)
+
+local setDieOnFullBagEnabled = makeToggleCard(
+    116,
+    "Auto Respawn",
+    "",
+    Theme.Coral,
+    Theme.Gold,
+    function(enabled)
+        state.dieOnFullBag = enabled
+        bagKillTriggered = false
+        bagFullConfirmations = 0
+        if enabled then
+            -- Start a fresh fallback counter and allow the game's GUI to
+            -- finish updating before any full-bag decision is made.
+            bagStartFarmed = state.farmed
+            bagCheckEnabledAt = os.clock()
+        end
+    end
+)
+
+local function killCharacterWhenBagIsFull()
+    if bagKillTriggered or not state.dieOnFullBag then
+        return
+    end
+
+    -- Reset when the interface bag counter reaches the limit (40, or 50 with ELITE).
+    if state.bagCount < state.bagLimit then
+        return
+    end
+
+    bagKillTriggered = true
+    currentTarget = nil
+    state.farmPaused = state.autofarm
+    state.pauseReason = state.autofarm and "RESET" or ""
+    restoreCharacter()
+
+    -- Keep AUTOFARM and AUTO RESET enabled through the respawn.
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Health > 0 then
+        humanoid.Health = 0
+        humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+        task.delay(0.05, function()
+            if character and character.Parent then
+                character:BreakJoints()
+            end
+        end)
+    end
+end
+
+-- Farm speed card (Tropical Breeze block was removed completely)
+local speedCard, speedOutline = makeCard("FarmSpeed", 174, 76)
+addGlowBar(speedCard, 10, 56, Theme.Cyan, Theme.Aqua)
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Position = UDim2.fromOffset(32, 7),
+    Size = UDim2.fromOffset(170, 20),
+    Text = "Farm Speed",
+    TextColor3 = Theme.White,
+    TextSize = 14,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 14,
+}, speedCard)
+
+local speedLabel = create("TextLabel", {
+    AnchorPoint = Vector2.new(1, 0),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Position = UDim2.new(1, -16, 0, 7),
+    RichText = true,
+    Size = UDim2.fromOffset(86, 20),
+    Text = string.format('%d <font color="#9FB8D3">/ 30</font>', state.farmSpeed),
+    TextColor3 = Theme.Gold,
+    TextSize = 13,
+    TextXAlignment = Enum.TextXAlignment.Right,
+    ZIndex = 14,
+}, speedCard)
+
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.Gotham,
+    Position = UDim2.fromOffset(32, 27),
+    Size = UDim2.new(1, -64, 0, 15),
+    Text = "autofarm movement speed",
+    TextColor3 = Theme.Muted,
+    TextSize = 10,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 14,
+}, speedCard)
+
+local slider = create("Frame", {
+    BackgroundColor3 = Theme.Dim,
+    BackgroundTransparency = 0.55,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(32, 55),
+    Size = UDim2.new(1, -64, 0, 6),
+    ZIndex = 14,
+}, speedCard)
+addCorner(slider, 99)
+
+local initialProgress = (state.farmSpeed - 20) / 10
+local sliderFill = create("Frame", {
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+    Size = UDim2.fromScale(initialProgress, 1),
+    ZIndex = 15,
+}, slider)
+addCorner(sliderFill, 99)
+addGradient(sliderFill, {
+    { 0, Theme.Cyan },
+    { 0.5, Theme.Gold },
+    { 1, Theme.Coral },
+}, 0)
+
+local sliderKnob = create("Frame", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = Theme.White,
+    BorderSizePixel = 0,
+    Position = UDim2.new(initialProgress, 0, 0.5, 0),
+    Size = UDim2.fromOffset(17, 17),
+    ZIndex = 17,
+}, slider)
+addCorner(sliderKnob, 99)
+addStroke(sliderKnob, Theme.Navy, 3, 0.18)
+
+local sliderHitbox = create("TextButton", {
+    AutoButtonColor = false,
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(-8, -12),
+    Size = UDim2.new(1, 16, 1, 24),
+    Text = "",
+    ZIndex = 18,
+}, slider)
+
+local sliderDragging = false
+local sliderInput
+local displayedProgress = initialProgress
+local targetProgress = initialProgress
+
+local function setSpeedTarget(screenX)
+    local width = slider.AbsoluteSize.X
+    if width <= 0 then return end
+    targetProgress = math.clamp((screenX - slider.AbsolutePosition.X) / width, 0, 1)
+    state.farmSpeed = math.floor(20 + targetProgress * 10 + 0.5)
+    speedLabel.Text = string.format('%d <font color="#9FB8D3">/ 30</font>', state.farmSpeed)
+end
+
+connect(sliderHitbox.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        sliderDragging = true
+        sliderInput = input
+        setSpeedTarget(input.Position.X)
+        smoothTween(sliderKnob, 0.22, { Size = UDim2.fromOffset(21, 21) }, Enum.EasingStyle.Back)
+    end
+end)
+
+connect(UserInputService.InputChanged, function(input)
+    if not sliderDragging then return end
+    local mouse = input.UserInputType == Enum.UserInputType.MouseMovement
+    local touch = sliderInput and sliderInput.UserInputType == Enum.UserInputType.Touch and input == sliderInput
+    if mouse or touch then
+        setSpeedTarget(input.Position.X)
+    end
+end)
+
+connect(UserInputService.InputEnded, function(input)
+    if not sliderDragging then return end
+    local mouseReleased = sliderInput and sliderInput.UserInputType == Enum.UserInputType.MouseButton1
+        and input.UserInputType == Enum.UserInputType.MouseButton1
+    if input == sliderInput or mouseReleased then
+        sliderDragging = false
+        sliderInput = nil
+        smoothTween(sliderKnob, 0.3, { Size = UDim2.fromOffset(17, 17) }, Enum.EasingStyle.Back)
+    end
+end)
+
+connect(sliderHitbox.MouseEnter, function()
+    smoothTween(speedCard, 0.35, { BackgroundTransparency = 0.02 })
+    smoothTween(speedOutline, 0.35, { Transparency = 0.18 })
+end)
+connect(sliderHitbox.MouseLeave, function()
+    smoothTween(speedCard, 0.4, { BackgroundTransparency = 0.04 })
+    smoothTween(speedOutline, 0.4, { Transparency = 0.18 })
+end)
+
+local setProtectionEnabled = makeToggleCard(
+    258,
+    "Anti Fling / Void",
+    "",
+    Theme.Aqua,
+    Theme.Blue,
+    function(enabled)
+        state.protection = enabled
+    end
+)
+
+local footer = create("TextLabel", {
+    AnchorPoint = Vector2.new(0.5, 1),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamMedium,
+    Position = UDim2.new(0.5, 0, 1, -9),
+    Size = UDim2.new(1, -30, 0, 24),
+    Text = "MM2 SUMMER AUTOFARM  •  made by skobliko",
+    TextColor3 = Theme.Dim,
+    TextSize = 9,
+    TextTransparency = 0.18,
+    ZIndex = 13,
+}, window)
+
+-- Separate farm summary mini GUI
+local statsPanel = create("Frame", {
+    Name = "FarmSummary",
+    AnchorPoint = Vector2.new(1, 0.5),
+    Active = true,
+    BackgroundColor3 = Theme.NavySoft,
+    BackgroundTransparency = 0.04,
+    BorderSizePixel = 0,
+    Position = UDim2.new(1, -16, 0.5, 0),
+    Size = UDim2.fromOffset(196, 202),
+    ZIndex = 40,
+}, screenGui)
+addCorner(statsPanel, 18)
+local statsStroke = addStroke(statsPanel, Theme.OrangeNeon, 2, 0.08)
+local statsBorderGradient = addGradient(statsStroke, {
+    { 0, Theme.OrangeSoft },
+    { 0.5, Theme.OrangeNeon },
+    { 1, Theme.OrangeSoft },
+}, 25)
+addGradient(statsPanel, {
+    { 0, Color3.fromRGB(22, 84, 128) },
+    { 0.55, Color3.fromRGB(12, 42, 83) },
+    { 1, Color3.fromRGB(48, 32, 94) },
+}, 125)
+addGlowBar(statsPanel, 14, 34, Theme.Cyan, Theme.Gold)
+statsScale = create("UIScale", { Scale = 1 }, statsPanel)
+refreshViewport()
+
+local statsHeader = create("Frame", {
+    Name = "StatsHeader",
+    Active = true,
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(24, 8),
+    Size = UDim2.new(1, -32, 0, 42),
+    ZIndex = 43,
+}, statsPanel)
+
+create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Size = UDim2.new(1, 0, 0, 24),
+    Text = "FARM STATS",
+    TextColor3 = Theme.White,
+    TextSize = 14,
+    TextStrokeColor3 = Theme.Aqua,
+    TextStrokeTransparency = 0.58,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 44,
+}, statsHeader)
+
+local statsStatus = create("TextLabel", {
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Position = UDim2.fromOffset(0, 22),
+    Size = UDim2.new(1, 0, 0, 14),
+    Text = "PAUSED",
+    TextColor3 = Theme.Coral,
+    TextSize = 9,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 44,
+}, statsHeader)
+
+local statsDivider = create("Frame", {
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BackgroundTransparency = 0.12,
+    BorderSizePixel = 0,
+    Position = UDim2.fromOffset(14, 53),
+    Size = UDim2.new(1, -28, 0, 2),
+    ZIndex = 42,
+}, statsPanel)
+addCorner(statsDivider, 99)
+local statsDividerGradient = addGradient(statsDivider, {
+    { 0, Theme.OrangeSoft },
+    { 0.5, Theme.OrangeNeon },
+    { 1, Theme.OrangeSoft },
+}, 0)
+
+local function makeStatRow(y, caption, initialValue, valueColor)
+    -- Thin divider above every row except the first (experiment #5).
+    if y > 63 then
+        create("Frame", {
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BackgroundTransparency = 0.92,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(16, y - 2),
+            Size = UDim2.new(1, -32, 0, 1),
+            ZIndex = 42,
+        }, statsPanel)
+    end
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamMedium,
+        Position = UDim2.fromOffset(16, y),
+        Size = UDim2.fromOffset(92, 22),
+        Text = caption,
+        TextColor3 = Theme.Muted,
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 43,
+    }, statsPanel)
+
+    return create("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        Position = UDim2.new(1, -16, 0, y),
+        Size = UDim2.fromOffset(74, 22),
+        Text = initialValue,
+        TextColor3 = valueColor,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        ZIndex = 43,
+    }, statsPanel)
+end
+
+local farmedStat = makeStatRow(63, "Collected", "0", Theme.Gold)
+local timeStat = makeStatRow(88, "Session", "00:00", Theme.Cyan)
+local rateStat = makeStatRow(113, "Per Hour", "0", Theme.Coral)
+local speedStat = makeStatRow(138, "Speed", tostring(state.farmSpeed), Theme.White)
+local bagStat = makeStatRow(163, "Bag", "0/" .. tostring(state.bagLimit), Theme.OrangeBright)
+
+local statsDragging = false
+local statsDragInput
+local statsDragStart
+local statsStartPosition
+
+connect(statsHeader.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        statsDragging = true
+        statsDragInput = input
+        statsDragStart = input.Position
+        statsStartPosition = statsPanel.Position
+    end
+end)
+
+connect(UserInputService.InputChanged, function(input)
+    if not statsDragging or not statsDragInput then return end
+    local mouse = input.UserInputType == Enum.UserInputType.MouseMovement
+    local touch = statsDragInput.UserInputType == Enum.UserInputType.Touch and input == statsDragInput
+    if not mouse and not touch then return end
+    local delta = input.Position - statsDragStart
+    statsPanel.Position = UDim2.new(
+        statsStartPosition.X.Scale,
+        statsStartPosition.X.Offset + delta.X,
+        statsStartPosition.Y.Scale,
+        statsStartPosition.Y.Offset + delta.Y
+    )
+end)
+
+connect(UserInputService.InputEnded, function(input)
+    if not statsDragInput then return end
+    local mouseReleased = statsDragInput.UserInputType == Enum.UserInputType.MouseButton1
+        and input.UserInputType == Enum.UserInputType.MouseButton1
+    if input == statsDragInput or mouseReleased then
+        statsDragging = false
+        statsDragInput = nil
+    end
+end)
+
+-- Dragging
+local dragging = false
+local dragInput
+local dragStart
+local holderStart
+
+local function pointInside(object, point)
+    local topLeft = object.AbsolutePosition
+    local size = object.AbsoluteSize
+    return point.X >= topLeft.X and point.X <= topLeft.X + size.X
+        and point.Y >= topLeft.Y and point.Y <= topLeft.Y + size.Y
+end
+
+connect(header.InputBegan, function(input)
+    if state.closing then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+    if pointInside(minimizeButton, input.Position) or pointInside(closeButton, input.Position) then
+        return
+    end
+    dragging = true
+    dragInput = input
+    dragStart = input.Position
+    holderStart = holder.Position
+end)
+
+connect(UserInputService.InputChanged, function(input)
+    if not dragging or not dragInput then return end
+    local mouse = input.UserInputType == Enum.UserInputType.MouseMovement
+    local touch = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
+    if not mouse and not touch then return end
+
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local viewport = camera.ViewportSize
+    local delta = input.Position - dragStart
+    local x = holderStart.X.Scale * viewport.X + holderStart.X.Offset + delta.X
+    local y = holderStart.Y.Scale * viewport.Y + holderStart.Y.Offset + delta.Y
+    holder.Position = UDim2.fromOffset(x, y)
+    clampWindow()
+end)
+
+connect(UserInputService.InputEnded, function(input)
+    if not dragInput then return end
+    local mouseReleased = dragInput.UserInputType == Enum.UserInputType.MouseButton1
+        and input.UserInputType == Enum.UserInputType.MouseButton1
+    if input == dragInput or mouseReleased then
+        dragging = false
+        dragInput = nil
+    end
+end)
+
+local function setMinimized(value)
+    if state.closing or state.minimized == value then return end
+    state.minimized = value
+    minimizeButton.Text = value and "+" or "—"
+
+    if not value then
+        content.Visible = true
+        footer.Visible = true
+    end
+
+    local targetHeight = value and COLLAPSED_HEIGHT or WINDOW_HEIGHT
+    smoothTween(window, 0.52, { Size = UDim2.fromOffset(WINDOW_WIDTH, targetHeight) }, Enum.EasingStyle.Quart)
+    smoothTween(shadow, 0.52, {
+        Size = UDim2.fromOffset(WINDOW_WIDTH + 56, targetHeight + 56),
+        ImageTransparency = value and 0.5 or 0.24,
+    }, Enum.EasingStyle.Quart)
+
+    if value then
+        task.delay(0.45, function()
+            if state.alive and state.minimized then
+                content.Visible = false
+                footer.Visible = false
+            end
+        end)
+    end
+    task.defer(clampWindow)
+end
+
+connect(minimizeButton.Activated, function()
+    setMinimized(not state.minimized)
+end)
+
+connect(closeButton.Activated, function()
+    if state.closing then return end
+    state.closing = true
+    state.autofarm = false
+    restoreCharacter()
+
+    smoothTween(window, 0.32, { GroupTransparency = 1 }, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+    smoothTween(shadow, 0.3, { ImageTransparency = 1 })
+    task.delay(0.34, function()
+        cleanup()
+        if screenGui.Parent then
+            screenGui:Destroy()
+        end
+    end)
+end)
+
+-- Background animation, slider movement and farm statistics
+local elapsed = 0
+local statsAccumulator = 0
+local lastDecorUpdate = 0
+connect(RunService.RenderStepped, function(deltaTime)
+    if not state.alive then return end
+    elapsed += deltaTime
+    statsAccumulator += deltaTime
+
+    if statsAccumulator >= 0.2 then
+        statsAccumulator = 0
+        local sessionSeconds = math.max(0, os.clock() - state.sessionStarted)
+        local wholeSeconds = math.floor(sessionSeconds)
+        local minutes = math.floor(wholeSeconds / 60)
+        local seconds = wholeSeconds % 60
+        local perHour = sessionSeconds > 0 and (state.farmed / sessionSeconds) * 3600 or 0
+
+        farmedStat.Text = tostring(state.farmed)
+        timeStat.Text = string.format("%02d:%02d", minutes, seconds)
+        rateStat.Text = string.format("%.0f", perHour)
+        speedStat.Text = tostring(state.farmSpeed)
+        updateBagFromInterface()
+        bagStat.Text = string.format("%d/%d%s", state.bagCount, state.bagLimit, state.bagFound and "" or " (?)")
+        bagStat.TextColor3 = state.bagCount >= state.bagLimit and Theme.Coral or Theme.OrangeBright
+        if not state.autofarm then
+            statsStatus.Text = "OFF"
+            statsStatus.TextColor3 = Theme.Red
+        elseif state.farmPaused then
+            statsStatus.Text = state.pauseReason
+            statsStatus.TextColor3 = Theme.Gold
+        else
+            statsStatus.Text = "FARMING"
+            statsStatus.TextColor3 = Theme.OrangeNeon
+        end
+        killCharacterWhenBagIsFull()
+    end
+
+    -- Perf: stop writing slider properties once the knob has settled.
+    if math.abs(targetProgress - displayedProgress) > 0.0005 then
+        displayedProgress += (targetProgress - displayedProgress) * math.min(1, deltaTime * 18)
+        sliderFill.Size = UDim2.fromScale(displayedProgress, 1)
+        sliderKnob.Position = UDim2.new(displayedProgress, 0, 0.5, 0)
+    end
+
+    -- Perf: decorative animation refreshes at ~30 FPS instead of every frame.
+    -- The motion is time-driven (elapsed), so it looks the same with half
+    -- the UI property writes per second.
+    if elapsed - lastDecorUpdate < 0.03 then
+        return
+    end
+    lastDecorUpdate = elapsed
+
+    backgroundGradient.Rotation = 125 + math.sin(elapsed * 0.22) * 7
+    backgroundGradient.Offset = Vector2.new(math.sin(elapsed * 0.16) * 0.05, math.cos(elapsed * 0.13) * 0.035)
+    borderGradient.Rotation = (elapsed * 150) % 360
+    statsBorderGradient.Rotation = (25 - elapsed * 18) % 360
+    statsBorderGradient.Offset = Vector2.new(math.cos(elapsed * 0.75) * 0.18, 0)
+    statsDividerGradient.Offset = Vector2.new(math.sin(elapsed * 0.9) * 0.32, 0)
+    topNeonGradient.Offset = Vector2.new(math.sin(elapsed * 0.8) * 0.35, 0)
+    topNeon.BackgroundTransparency = 0.05 + math.sin(elapsed * 1.2) * 0.04
+
+    for _, bar in ipairs(glowBars) do
+        local pulse = (math.sin(elapsed * 2.35 + bar.phase) + 1) * 0.5
+        bar.auraWide.BackgroundTransparency = 0.97 - pulse * 0.05
+        bar.auraMid.BackgroundTransparency = 0.86 - pulse * 0.12
+        bar.auraNear.BackgroundTransparency = 0.62 - pulse * 0.18
+        bar.core.BackgroundTransparency = 0.02 - pulse * 0.02
+        bar.sharp.BackgroundTransparency = 0.26 - pulse * 0.14
+        bar.gradient.Offset = Vector2.new(0, math.sin(elapsed * 1.45 + bar.phase) * 0.16)
+    end
+
+    glow.Position = UDim2.fromOffset(330 + math.sin(elapsed * 0.32) * 10, 95 + math.cos(elapsed * 0.28) * 7)
+    glow.BackgroundTransparency = 0.58 + math.sin(elapsed * 0.5) * 0.04
+    warmGlow.Position = UDim2.fromOffset(45 + math.cos(elapsed * 0.27) * 11, 330 + math.sin(elapsed * 0.24) * 8)
+    warmGlow.BackgroundTransparency = 0.68 + math.cos(elapsed * 0.43) * 0.04
+
+    for _, entry in ipairs(glints) do
+        local pulse = (math.sin(elapsed * 1.8 + entry.phase) + 1) * 0.5
+        local size = 9 + pulse * 9
+        local transparency = 0.55 - pulse * 0.45
+        entry.object.Size = UDim2.fromOffset(size, size)
+        entry.object.Position = UDim2.fromOffset(
+            entry.baseX + math.sin(elapsed * 0.45 + entry.phase) * 4,
+            entry.baseY + math.cos(elapsed * 0.38 + entry.phase) * 3
+        )
+        entry.object.Rotation = (elapsed * 18 + entry.phase * 20) % 360
+        entry.vertical.BackgroundTransparency = transparency
+        entry.horizontal.BackgroundTransparency = transparency
+    end
+
+    local sunPulse = (math.sin(elapsed * 1.7) + 1) * 0.5
+    sunGlowOuter.BackgroundTransparency = 0.88 - sunPulse * 0.12
+    sunGlowInner.BackgroundTransparency = 0.72 - sunPulse * 0.18
+    sunGlowOuter.Size = UDim2.fromOffset(36 + sunPulse * 10, 36 + sunPulse * 10)
+    sunGlowInner.Size = UDim2.fromOffset(27 + sunPulse * 6, 27 + sunPulse * 6)
+    sun.Rotation = (elapsed * 18) % 360
+    sunCore.BackgroundTransparency = 0.05 + sunPulse * 0.22
+    sunCore.Size = UDim2.fromOffset(7 + sunPulse * 3, 7 + sunPulse * 3)
+    for rayNumber, sunRay in ipairs(sunRays) do
+        sunRay.BackgroundTransparency = 0.04 + ((math.sin(elapsed * 2.4 + rayNumber) + 1) * 0.5) * 0.3
+    end
+end)
+
+-- Opening animation
+local popScale = create("UIScale", { Scale = 0.94 }, window)
+smoothTween(window, 0.48, { GroupTransparency = 0 }, Enum.EasingStyle.Quart)
+smoothTween(popScale, 0.58, { Scale = 1 }, Enum.EasingStyle.Back)
+smoothTween(shadow, 0.55, { ImageTransparency = 0.24 }, Enum.EasingStyle.Quart)
+playUiSound(1, 0.9)
