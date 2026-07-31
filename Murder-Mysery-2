@@ -1,6 +1,5 @@
 --[[
-    MM2 Summer Autofarm GUI (Fixed Respawn & Working Slider)
-    All original bypasses, auto-detects, and protections preserved.
+    MM2 Summer Autofarm GUI (Full Original Port + Fixed Respawn & Fixed Slider)
 ]]
 
 local Players = game:GetService("Players")
@@ -206,7 +205,7 @@ connect(screenGui.AncestryChanged, function(_, parent)
     end
 end)
 
--- Autofarm Data
+-- Coin Detection Logic
 local coinBlacklist = {}
 local coinTouchFails = setmetatable({}, { __mode = "k" })
 local deadCoins = setmetatable({}, { __mode = "k" })
@@ -603,7 +602,7 @@ farmConnection = RunService.Heartbeat:Connect(function(deltaTime)
     end
 end)
 
--- Anti-Fling / Anti-Void
+-- Anti-Fling & Protection Bypasses
 local lastSafePosition = nil
 local lastFramePosition = nil
 local safePosAccumulator = 0
@@ -662,7 +661,7 @@ connect(player.Idled, function()
     end)
 end)
 
--- Root Layout
+-- Layout Builder
 local holder = create("Frame", {
     Name = "Holder",
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -741,20 +740,6 @@ local function playUiSound(speed, volume)
     end)
 end
 
-local shadow = create("ImageLabel", {
-    Name = "Shadow",
-    BackgroundTransparency = 1,
-    Image = "rbxassetid://1316045217",
-    ImageColor3 = Color3.fromRGB(2, 6, 20),
-    ImageTransparency = 1,
-    Position = UDim2.fromOffset(-28, -20),
-    ScaleType = Enum.ScaleType.Slice,
-    SliceCenter = Rect.new(10, 10, 118, 118),
-    Size = UDim2.fromOffset(WINDOW_WIDTH + 56, WINDOW_HEIGHT + 56),
-    Visible = false,
-    ZIndex = 0,
-}, holder)
-
 local window = create("CanvasGroup", {
     Name = "Window",
     BackgroundColor3 = Theme.Navy,
@@ -767,7 +752,7 @@ local window = create("CanvasGroup", {
 addCorner(window, 17)
 
 local windowStroke = addStroke(window, Theme.OrangeNeon, 2.5, 0)
-local borderGradient = addGradient(windowStroke, {
+addGradient(windowStroke, {
     { 0, Theme.OrangeBright },
     { 0.14, Theme.OrangeNeon },
     { 0.4, Theme.OrangeSoft },
@@ -781,7 +766,7 @@ local background = create("Frame", {
     ZIndex = 1,
 }, window)
 addCorner(background, 16)
-local backgroundGradient = addGradient(background, {
+addGradient(background, {
     { 0, Color3.fromRGB(16, 82, 137) },
     { 0.48, Color3.fromRGB(12, 44, 92) },
     { 0.78, Color3.fromRGB(48, 34, 104) },
@@ -826,7 +811,7 @@ local function makeHeaderButton(name, text, offset, accent)
         ZIndex = 24,
     }, header)
     addCorner(button, 99)
-    local outline = addStroke(button, accent, 1, 0.48)
+    addStroke(button, accent, 1, 0.48)
 
     connect(button.Activated, function() playUiSound(1.2, 0.7) end)
     return button
@@ -999,11 +984,9 @@ local setDieOnFullBagEnabled = makeToggleCard(
     end
 )
 
--- FIXED RESPAWN LOGIC (ONLY KILLS IN ACTIVE GAME AND VALIDATED FULL BAG)
+-- FIXED RESPAWN SAFETY CHECK (Will NEVER kill you on spawn or lobby)
 local function killCharacterWhenBagIsFull()
     if bagKillTriggered or not state.dieOnFullBag then return end
-    
-    -- SAFETY CHECK: Never trigger full bag death outside active gameplay!
     if not state.bagFound or state.bagCount < state.bagLimit or isRoundOver() then return end
 
     bagKillTriggered = true
@@ -1025,7 +1008,7 @@ local function killCharacterWhenBagIsFull()
     end
 end
 
--- FIXED SLIDER (WORKS SMOOTHLY ON ALL RESOLUTIONS / USESCALE)
+-- FIXED SLIDER WITH FULL ACCURACY ON PC AND MOBILE
 local speedCard = makeCard("FarmSpeed", 116, 76)
 create("TextLabel", {
     BackgroundTransparency = 1,
@@ -1198,7 +1181,7 @@ connect(minimizeButton.Activated, function()
     window.Size = UDim2.fromOffset(WINDOW_WIDTH, state.minimized and COLLAPSED_HEIGHT or WINDOW_HEIGHT)
 end)
 
--- Main Loop
+-- Render Stepped Loop
 local statsAccumulator = 0
 connect(RunService.RenderStepped, function(deltaTime)
     if not state.alive then return end
