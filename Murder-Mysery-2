@@ -135,6 +135,223 @@ Modules.Config = {
 Modules.PlayerData = {}
 Modules.MobileButtons = {}
 
+-- Интеграция данных мешей (mm2_meshes_data)
+Modules.MeshDatas = {
+    ["Gingerscope"] = {
+        Complete = true,
+        Display = {
+            {
+                Class = "MeshPart",
+                Name = "GunDisplay",
+                Path = "(root)",
+                Props = {
+                    CanCollide = false,
+                    Color = Color3.fromRGB(143, 34, 34),
+                    Material = Enum.Material.Brick,
+                    MeshId = "rbxassetid://15374602183",
+                    Reflectance = 0,
+                    Size = Vector3.new(0.2697, 1.2582, 4.2087),
+                    TextureID = "rbxassetid://15409041564",
+                    Transparency = 0,
+                },
+            },
+            {
+                Class = "MeshPart",
+                Name = "Scope",
+                Props = {
+                    CanCollide = false,
+                    Color = Color3.fromRGB(129, 181, 204),
+                    Material = Enum.Material.Glass,
+                    MeshId = "rbxassetid://15374679651",
+                    Reflectance = 1,
+                    Size = Vector3.new(0.1871, 0.1871, 1.4135),
+                    TextureID = "",
+                    Transparency = 0.35,
+                },
+            },
+            {
+                Class = "Beam",
+                Name = "CustomBeam",
+                Props = {
+                    Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)) }),
+                    LightEmission = 1,
+                    Texture = "rbxassetid://15374653796",
+                    TextureLength = 1.5,
+                    Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0) }),
+                    Width0 = 1,
+                    Width1 = 1,
+                },
+            },
+        },
+        MeshCount = 1,
+        Meta = {
+            Event = "Christmas",
+            FX = true,
+            Image = "http://www.roblox.com/Thumbs/Asset.ashx?format=png&width=250&height=250&assetId=15666596216",
+            ItemID = 15666469505,
+            ItemName = "Gingerscope",
+            ItemType = "Gun",
+            Rarity = "Ancient",
+            Year = "2023",
+        },
+    },
+    ["Harvester"] = {
+        Complete = false,
+        Display = {
+            {
+                Class = "MeshPart",
+                Name = "GunDisplay",
+                Path = "(root)",
+                Props = {
+                    CanCollide = false,
+                    Color = Color3.fromRGB(17, 17, 17),
+                    Material = Enum.Material.Brick,
+                    MeshId = "rbxassetid://7775027413",
+                    Reflectance = 0,
+                    Size = Vector3.new(2.2448, 0.6549, 2.88),
+                    TextureID = "http://www.roblox.com/asset/?id=7775245551",
+                    Transparency = 0,
+                },
+            },
+            {
+                Class = "Beam",
+                Name = "CustomBeam",
+                Props = {
+                    Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 0)) }),
+                    LightEmission = 0.5,
+                    Texture = "",
+                    TextureLength = 1,
+                    Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5, 0), NumberSequenceKeypoint.new(1, 0.5, 0) }),
+                    Width0 = 0.2,
+                    Width1 = 0.2,
+                },
+            },
+        },
+        MeshCount = 0,
+        Meta = {
+            Angles = { X = 0.6109, Y = 3.1416, Z = 1.5708 },
+            Event = "Halloween",
+            Image = "http://www.roblox.com/Thumbs/Asset.ashx?format=png&width=250&height=250&assetId=7800847534",
+            ItemID = 7800847534,
+            ItemName = "Harvester",
+            ItemType = "Gun",
+            Rarity = "Ancient",
+            Year = "2021",
+        },
+    },
+    ["Icepiercer"] = {
+        Complete = false,
+        Display = {
+            {
+                Class = "MeshPart",
+                Name = "GunDisplay",
+                Path = "(root)",
+                Props = {
+                    CanCollide = false,
+                    Color = Color3.fromRGB(17, 17, 17),
+                    Material = Enum.Material.Brick,
+                    MeshId = "rbxassetid://7775027413",
+                    Reflectance = 0,
+                    Size = Vector3.new(2.2448, 0.6549, 2.88),
+                    TextureID = "http://www.roblox.com/asset/?id=7775245551",
+                    Transparency = 0,
+                },
+            },
+        },
+        MeshCount = 0,
+        Meta = {
+            Event = "Christmas",
+            Image = "http://www.roblox.com/Thumbs/Asset.ashx?format=png&width=250&height=250&assetId=11874071041",
+            ItemID = 11874071041,
+            ItemName = "Icepiercer",
+            ItemType = "Gun",
+            Rarity = "Ancient",
+            Year = "2022",
+        },
+    },
+    ["Amerilaser"] = {
+        Complete = true,
+        Display = {
+            {
+                Class = "Part",
+                Name = "GunDisplay",
+                Path = "(root)",
+                Props = {
+                    CanCollide = false,
+                    Color = Color3.fromRGB(163, 162, 165),
+                    Material = Enum.Material.Plastic,
+                    Reflectance = 0,
+                    Shape = Enum.PartType.Block,
+                    Size = Vector3.new(0.6, 1, 1.8),
+                    Transparency = 0,
+                },
+            },
+            {
+                Class = "SpecialMesh",
+                Name = "Mesh",
+                Props = {
+                    MeshId = "http://www.roblox.com/asset/?id=116657254",
+                    MeshType = Enum.MeshType.FileMesh,
+                    Offset = Vector3.new(0, 0, 0),
+                    Scale = Vector3.new(0.7, 0.7, 0.7),
+                    TextureId = "https://www.roblox.com/asset/?id=445884341",
+                    VertexColor = Vector3.new(1, 1, 1),
+                },
+            },
+        },
+        MeshCount = 1,
+        Meta = {
+            Angles = { X = -2.1817, Y = 0, Z = 0 },
+            Image = "http://www.roblox.com/Thumbs/Asset.ashx?format=png&width=250&height=250&assetId=446050753",
+            ItemID = 446050753,
+            ItemName = "Amerilaser",
+            ItemType = "Gun",
+            Rarity = "Godly",
+        },
+    },
+    ["Darkbringer"] = {
+        Complete = true,
+        Display = {
+            {
+                Class = "Part",
+                Name = "GunDisplay",
+                Path = "(root)",
+                Props = {
+                    CanCollide = false,
+                    Color = Color3.fromRGB(0, 143, 156),
+                    Material = Enum.Material.Plastic,
+                    Reflectance = 0,
+                    Shape = Enum.PartType.Block,
+                    Size = Vector3.new(0.45, 1.26, 1.7),
+                    Transparency = 0,
+                },
+            },
+            {
+                Class = "SpecialMesh",
+                Name = "Mesh",
+                Props = {
+                    MeshId = "rbxassetid://4730813852",
+                    MeshType = Enum.MeshType.FileMesh,
+                    Offset = Vector3.new(0, 0, 0),
+                    Scale = Vector3.new(0.0384, 0.035, 0.035),
+                    TextureId = "rbxassetid://4728494788",
+                    VertexColor = Vector3.new(1, 1, 1),
+                },
+            },
+        },
+        MeshCount = 1,
+        Meta = {
+            Angles = { X = 3.7525, Y = 0, Z = 0 },
+            Image = "http://www.roblox.com/asset/?id=4751387674",
+            ItemID = 4749071819,
+            ItemName = "Darkbringer",
+            ItemType = "Gun",
+            Rarity = "Godly",
+            Season = 1,
+        },
+    },
+}
+
 local function updateCharacterRefs(character)
     Modules.Character = character
 
@@ -1443,7 +1660,7 @@ do
 
         Modules.MobileButtons[id] = screenGui
 
-        local buttonCount = 0
+        let buttonCount = 0
         for _, gui in pairs(Modules.MobileButtons) do
             if gui and gui.Parent then buttonCount = buttonCount + 1 end
         end
@@ -1571,7 +1788,6 @@ local Window = WindUI:CreateWindow({
     }
 })
 
--- Создаем фоновый слой со звездами и бликами для красоты
 task.spawn(function()
     pcall(function()
         local starsGui = Instance.new("ScreenGui")
@@ -1580,7 +1796,6 @@ task.spawn(function()
         starsGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         starsGui.Parent = CoreGui
 
-        -- Случайные мерцающие звезды
         for i = 1, 45 do
             local star = Instance.new("Frame")
             star.Size = UDim2.fromOffset(math.random(2, 4), math.random(2, 4))
@@ -1604,14 +1819,13 @@ task.spawn(function()
             end)
         end
 
-        -- Мягкие светящиеся неоновые блики на фоне
         for i = 1, 3 do
             local glow = Instance.new("ImageLabel")
             glow.Size = UDim2.fromOffset(math.random(300, 500), math.random(300, 500))
             glow.Position = UDim2.fromScale(math.random(), math.random())
             glow.AnchorPoint = Vector2.new(0.5, 0.5)
             glow.BackgroundTransparency = 1
-            glow.Image = "rbxassetid://6014261993" -- Мягкий световой градиент
+            glow.Image = "rbxassetid://6014261993"
             glow.ImageColor3 = i == 1 and Color3.fromHex("#555555") or (i == 2 and Color3.fromHex("#333333") or Color3.fromHex("#222222"))
             glow.ImageTransparency = 0.85
             glow.Parent = starsGui
@@ -1621,51 +1835,15 @@ end)
 
 Window.ConfigManager:CreateConfig("Default")
 
-local Main = Window:Tab({
-    Title = "Home",
-    Icon = "house",
-})
-
-local Movement = Window:Tab({
-    Title = "Movement",
-    Icon = "footprints",
-})
-
-local Combat = Window:Tab({
-    Title = "Combat",
-    Icon = "swords",
-})
-
-local Visuals = Window:Tab({
-    Title = "Visuals",
-    Icon = "eye",
-})
-
-local Buttons = Window:Tab({
-    Title = "Buttons",
-    Icon = "square-mouse-pointer",
-})
-
-local Teleports = Window:Tab({
-    Title = "Teleports",
-    Icon = "map-pin",
-})
-
-local Misc = Window:Tab({
-    Title = "Misc",
-    Icon = "box",
-})
-
-local Farming = Window:Tab({
-    Title = "Farming",
-    Icon = "dollar-sign",
-})
-
-local Settings = Window:Tab({
-    Title = "Settings",
-    Icon = "settings",
-})
-
+local Main = Window:Tab({ Title = "Home", Icon = "house" })
+local Movement = Window:Tab({ Title = "Movement", Icon = "footprints" })
+local Combat = Window:Tab({ Title = "Combat", Icon = "swords" })
+local Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" })
+local Buttons = Window:Tab({ Title = "Buttons", Icon = "square-mouse-pointer" })
+local Teleports = Window:Tab({ Title = "Teleports", Icon = "map-pin" })
+local Misc = Window:Tab({ Title = "Misc", Icon = "box" })
+local Farming = Window:Tab({ Title = "Farming", Icon = "dollar-sign" })
+local Settings = Window:Tab({ Title = "Settings", Icon = "settings" })
 
 Main:Paragraph({
     Title = "Welcome to OwnerHub!",
@@ -1676,9 +1854,10 @@ Main:Paragraph({
 Main:Space()
 
 Main:Code({
-    Title = "Changelog 1.8.1",
+    Title = "Changelog 1.8.2",
     Code = [[
 [OwnerHub]
++ Integrated MM2 Mesh Data storage into Modules
 + Added functional Auto Farm Coins tab
 + Added animated star background and soft ambient glows
 + Fully optimized and stabilized performance
@@ -1771,16 +1950,16 @@ end
 
 do
     local CombatSection = Combat:MultiSection({
-    Title = "Combat",
-    Subtitle = "Enhance your combat abilities",
-    TextXAlignment = "Center",
-    Icon = "swords",
-    Sections = {
-        {"General", "backpack"},
-        {"Murderer", "skull"},
-        {"Sheriff", "shield"}
-    },
-})
+        Title = "Combat",
+        Subtitle = "Enhance your combat abilities",
+        TextXAlignment = "Center",
+        Icon = "swords",
+        Sections = {
+            {"General", "backpack"},
+            {"Murderer", "skull"},
+            {"Sheriff", "shield"}
+        },
+    })
 
     CombatSection.General:ButtonKeybind({
         Title = "Grab Gun",
@@ -1897,7 +2076,6 @@ do
             Modules.ShootMurdererOnce()
         end
     })
-
 end
 
 do
@@ -2674,7 +2852,7 @@ do
 
     SettingsSection.Config:Button({
         Title = "Load Config",
-        Desc = "Loads your previously saved settings",
+        Desc = "Load your previously saved settings",
         Icon = "folder-open",
         Callback = function()
             Window.CurrentConfig:Load()
