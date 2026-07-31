@@ -1,4 +1,4 @@
--- OwnerHub/main.lua с интегрированным автофармом из 112.lua
+-- OwnerHub/main.lua с рабочей поддержкой AutoRespawn и FarmSpeed
 -- GUI: WindUI
 
 local CoreGui = game:GetService("CoreGui")
@@ -19,8 +19,6 @@ local VirtualUser = game:GetService("VirtualUser")
 local Modules = {}
 
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/KevinScripts2024/Gkfkfkdlwsk/refs/heads/main/wind%20(1).txt"))()
-
-local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or function(...) end
 
 if getgenv().OwnerHub_Connections then
     for i, conn in pairs(getgenv().OwnerHub_Connections) do
@@ -60,115 +58,27 @@ Modules.GetMouse = GetMouse
 Modules.PlayerGui = PlayerGui
 Modules.PlaceId = PlaceId
 Modules.JobId = JobId
-Modules.RunService = RunService
-Modules.UserInputService = UserInputService
-Modules.Lighting = Lighting
-Modules.SoundService = SoundService
-Modules.Workspace = Workspace
-Modules.ReplicatedStorage = ReplicatedStorage
-Modules.HttpService = HttpService
-Modules.StarterGui = StarterGui
-Modules.TextChatService = TextChatService
 
 Modules.Config = {
-    GodMode = false,
-    AntiFling = false,
-    AntiAfk = false,
-    EnableWalkSpeed = false,
-    WalkSpeed = 16,
-    EnableJumpPower = false,
-    JumpPower = 50,
-    Noclip = false,
-    InfiniteJump = false,
-    AutoGrabGun = false,
-    AutoKill = false,
-    KnifeAura = false,
-    AuraRadius = 10,
-    EspPlayers = false,
-    ShowNames = false,
-    EspDroppedGun = false,
-    EspTrap = false,
-    RemoveTraps = false,
-    SilentThrow = false,
-    AutoShootMurderer = false,
-    AutoQueue = true,
-    QueueUrl = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/owner/Owner-Hub/refs/heads/main/main.lua"))()',
-    NotifyMurderer = false,
-    NotifySheriff = false,
-    NotifyGunDropped = false,
-    
     -- Настройки автофарма
     AutoFarmCoins = false,
     FarmSpeed = 25,
     AutoRespawn = false,
-    AntiFlingVoid = false,
-
-    ButtonsLocked = false
+    AntiFlingVoid = false
 }
 
-Modules.PlayerData = {}
-Modules.MobileButtons = {}
-
-local function updateCharacterRefs(character)
-    Modules.Character = character
-
-    if character then
-        local hum = character:FindFirstChildOfClass("Humanoid")
-        if not hum then
-            hum = character:WaitForChild("Humanoid", 5)
-        end
-
-        Modules.Humanoid = hum
-        Modules.Backpack = Modules.Player:FindFirstChild("Backpack")
-        Modules.RootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
-        Modules.Camera = Workspace.CurrentCamera
-    else
-        Modules.Humanoid = nil
-        Modules.RootPart = nil
-    end
-end
-
-if Modules.Player then
-    if Modules.Player.Character then
-        updateCharacterRefs(Modules.Player.Character)
-    end
-
-    AddConnection(Modules.Player.CharacterAdded:Connect(function(character)
-        updateCharacterRefs(character)
-    end))
-
-    AddConnection(Modules.Player.CharacterRemoving:Connect(function()
-        updateCharacterRefs(nil)
-    end))
-end
-
--- ================= LOGIC AUTOFARM (из 112.lua) =================
+-- ================= LOGIC AUTOFARM =================
 local fireTouch = (typeof(firetouchinterest) == "function" and firetouchinterest)
     or (typeof(firetouchtransmitter) == "function" and firetouchtransmitter)
     or nil
 
-local BAG_LIMIT_DEFAULT = 40
-local BAG_LIMIT_ELITE = 50
-local ELITE_GAMEPASS_ID = 429957
 local MAX_FARM_DISTANCE = 180
 local FLY_BELOW_OFFSET = fireTouch and 2.8 or 0.75
 local originalOcclusionMode = Player.DevCameraOcclusionMode
 
-local farmState = {
-    bagLimit = BAG_LIMIT_DEFAULT,
-    bagCount = 0,
-    bagFound = false,
-    farmed = 0,
-    farmPaused = false,
-    pauseReason = ""
-}
-
 local coinBlacklist = {}
-local coinTouchFails = setmetatable({}, { __mode = "k" })
 local deadCoins = setmetatable({}, { __mode = "k" })
-local coinHadVisual = setmetatable({}, { __mode = "k" })
 local currentTarget = nil
-local retargetAccumulator = 0
 local farmIdle = false
 
 local coinSet = {}
@@ -176,6 +86,26 @@ local trackedContainers = {}
 local lastRadarSweep = 0
 local lenientContainers = {}
 local detectedPickupNames = {}
+
+-- Функция определения заполненности сумки (MM2)
+local function getBagStatus()
+    local gui = Player:FindFirstChild("PlayerGui")
+    if not gui then return 0, 40 end
+    
+    local mainGui = gui:FindFirstChild("MainGUI") or gui:FindFirstChild("ScreenGui")
+    if mainGui then
+        -- Поиск текста сумки (обычно выглядит как "40/40" или "50/50")
+        for _, desc in ipairs(mainGui:GetDescendants()) do
+            if desc:IsA("TextLabel") and string.find(desc.Text, "/") then
+                local current, max = string.match(desc.Text, "(%d+)%s*/%s*(%d+)")
+                if current and max then
+                    return tonumber(current), tonumber(max)
+                end
+            end
+        end
+    end
+    return 0, 40
+end
 
 local function isCoinPart(coin)
     if not coin:IsA("BasePart") then return false end
@@ -193,9 +123,7 @@ end
 local function unregisterCoin(coin)
     coinSet[coin] = nil
     coinBlacklist[coin] = nil
-    coinTouchFails[coin] = nil
     deadCoins[coin] = nil
-    coinHadVisual[coin] = nil
 end
 
 local function watchContainer(container)
@@ -232,7 +160,7 @@ local function radarSweep(force)
     end
 end
 
-AddConnection(Workspace.ChildAdded:Connect(function(child)
+AddConnection(Workspace.ChildAdded:Connect(function()
     task.defer(radarSweep, true)
 end))
 radarSweep(true)
@@ -287,6 +215,19 @@ AddConnection(RunService.Heartbeat:Connect(function(deltaTime)
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not rootPart or not humanoid or humanoid.Health <= 0 then return end
+
+    -- ПРОВЕРКА ЗАПОЛНЕННОСТИ СУМКИ И АВТОРЕСПАВН
+    local currentBag, maxBag = getBagStatus()
+    if currentBag >= maxBag and maxBag > 0 then
+        if Modules.Config.AutoRespawn then
+            humanoid.Health = 0 -- Респавн при полной сумке
+            return
+        else
+            -- Если автореспавн выключен, просто стоим
+            restoreCharacter()
+            return
+        end
+    end
 
     if isRoundOver() then
         currentTarget = nil
@@ -353,10 +294,13 @@ AddConnection(RunService.Heartbeat:Connect(function(deltaTime)
         return
     end
 
+    -- ДИНАМИЧЕСКИЙ РАСЧЕТ СКОРОСТИ
+    local moveSpeed = tonumber(Modules.Config.FarmSpeed) or 25
     local safeDelta = math.min(deltaTime, 1 / 30)
-    local step = math.min(Modules.Config.FarmSpeed * safeDelta, math.max(distance - 0.1, 0))
+    local step = math.min(moveSpeed * safeDelta, math.max(distance - 0.1, 0))
     local nextPosition = rootPart.Position + offset.Unit * step
     local flatOffset = Vector3.new(offset.X, 0, offset.Z)
+    
     if flatOffset.Magnitude > 0.05 then
         rootPart.CFrame = CFrame.lookAt(nextPosition, nextPosition + flatOffset.Unit) * CFrame.Angles(-math.pi / 2, 0, 0)
     else
@@ -385,11 +329,8 @@ local Window = WindUI:CreateWindow({
     HasOutline = true
 })
 
--- Создаем отдельную вкладку для автофарма
-local MainTab = Window:Tab({ Name = "Main", Icon = "user" })
 local AutoFarmTab = Window:Tab({ Name = "Autofarm", Icon = "coins" })
 
--- Наполнение вкладки Autofarm
 AutoFarmTab:Toggle({
     Name = "Enable Autofarm",
     Desc = "Автоматический сбор монет на карте",
@@ -403,14 +344,16 @@ AutoFarmTab:Toggle({
     end
 })
 
+-- Исправлен передаваемый параметр
 AutoFarmTab:Slider({
     Name = "Farm Speed",
     Desc = "Скорость перемещения при автофарме",
-    Min = 20,
-    Max = 30,
+    Min = 5,
+    Max = 60,
     Default = Modules.Config.FarmSpeed,
     Callback = function(Value)
-        Modules.Config.FarmSpeed = Value
+        -- Приведение значения слайдера к числу
+        Modules.Config.FarmSpeed = tonumber(Value) or 25
     end
 })
 
